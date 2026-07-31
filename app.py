@@ -17,8 +17,8 @@ st.markdown("""
 html, body, [class*="css"]  { font-family: 'Manrope', sans-serif; }
 
 .stApp {
-    background: #FFFFFF;
-    color: #1A1D24;
+    background: radial-gradient(circle at 20% 0%, #171B21 0%, #0D0F13 55%, #0A0B0E 100%);
+    color: #E7E9EC;
 }
 
 .hero-title {
@@ -26,33 +26,33 @@ html, body, [class*="css"]  { font-family: 'Manrope', sans-serif; }
     font-size: 2.3rem;
     font-weight: 700;
     letter-spacing: -0.02em;
-    color: #14171C;
+    color: #F2F3F5;
     margin-bottom: 0;
 }
 .hero-sub {
     font-family: 'Manrope', sans-serif;
-    color: #6B7280;
+    color: #8A93A3;
     font-size: 0.95rem;
     margin-top: 4px;
 }
 
 /* VU 미터 바 (헤더 장식) */
 .vu-strip { display:flex; gap:4px; margin: 14px 0 22px 0; }
-.vu-bar { width: 6px; border-radius: 2px; background: #E5E7EB; }
-.vu-bar.on-teal { background: linear-gradient(180deg, #1F8F7B, #146B5C); }
-.vu-bar.on-amber { background: linear-gradient(180deg, #E08A2E, #B96E1C); }
+.vu-bar { width: 6px; border-radius: 2px; background: #262B33; }
+.vu-bar.on-teal { background: linear-gradient(180deg, #57E0C9, #1F8F7B); }
+.vu-bar.on-amber { background: linear-gradient(180deg, #FFC069, #E08A2E); }
 
 /* 결과 카드 */
 .metric-card {
-    background: #F7F8FA;
-    border: 1px solid #E5E7EB;
+    background: #14171C;
+    border: 1px solid #22262D;
     border-radius: 14px;
     padding: 18px 20px;
     margin-bottom: 12px;
 }
 .metric-label {
     font-size: 0.78rem;
-    color: #6B7280;
+    color: #8A93A3;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     margin-bottom: 6px;
@@ -60,44 +60,44 @@ html, body, [class*="css"]  { font-family: 'Manrope', sans-serif; }
 .metric-value {
     font-family: 'Space Mono', monospace;
     font-size: 1.6rem;
-    color: #1F8F7B;
+    color: #57E0C9;
     font-weight: 700;
 }
-.metric-value.amber { color: #B96E1C; }
-.metric-sub { color: #8A93A3; font-size: 0.8rem; margin-top: 4px; }
+.metric-value.amber { color: #FFC069; }
+.metric-sub { color: #6B7280; font-size: 0.8rem; margin-top: 4px; }
 
 .section-label {
     font-family: 'Space Mono', monospace;
-    color: #B96E1C;
+    color: #FFC069;
     font-size: 0.85rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     margin: 26px 0 10px 0;
-    border-bottom: 1px solid #E5E7EB;
+    border-bottom: 1px solid #22262D;
     padding-bottom: 6px;
 }
 
 .genre-row {
     display:flex; justify-content: space-between;
     font-family: 'Space Mono', monospace;
-    padding: 6px 0; border-bottom: 1px dashed #E5E7EB;
+    padding: 6px 0; border-bottom: 1px dashed #1E2229;
     font-size: 0.9rem;
-    color: #1A1D24;
 }
 
 .similarity-score {
     font-family: 'Space Mono', monospace;
     font-size: 3.2rem;
     font-weight: 700;
-    color: #1F8F7B;
+    color: #57E0C9;
     text-align: center;
 }
 
 section[data-testid="stFileUploader"] {
-    background: #F7F8FA; border: 1px dashed #D1D5DB; border-radius: 14px; padding: 10px;
+    background: #14171C; border: 1px dashed #2A2F38; border-radius: 14px; padding: 10px;
 }
 </style>
 """, unsafe_allow_html=True)
+
 
 def vu_strip(seed=0):
     import random
@@ -366,34 +366,106 @@ with tab2:
         with c2:
             st.markdown(f"**{file_b.name}**")
             render_report(result_b)
-
 with tab3:
     st.markdown("""
-### 리듬 / 템포
-| 항목 | 범위 | 의미 |
-|---|---|---|
-| BPM | 76~95 | 느긋함 (발라드, R&B) |
-| BPM | 96~115 | 보통 (팝, 미드템포 댄스) |
-| BPM | 116~130 | 업비트 (댄스, 하우스) |
-| 댄서빌리티 | 1.0~1.5 | 리듬이 뚜렷하고 규칙적 |
+## 1. 리듬 / 템포
 
-### 다이내믹스
-| 항목 | 범위 | 의미 |
-|---|---|---|
-| 다이내믹 복잡도 | 3~6 dB | 대중음악 표준 범위 |
-| 다이내믹 복잡도 | 6 dB 이상 | 다이내믹 폭 넓음 (라이브·클래식 성향) |
+**BPM (rhythm.bpm → 장르 기반 옥타브 보정 적용)**
+장르 예측 Top5와 각 장르별 전형적인 템포 중심값을 대조해서, 원본/절반/두배 BPM 중 가장 그럴듯한 값을 자동 채택합니다.
 
-### 감성 / 속성 지표 (0~1)
-| 지표 | 0.6 이상일 때 의미 |
+| 범위 | 느낌 |
 |---|---|
-| Acousticness | 어쿠스틱 악기 중심 사운드 |
-| Energy | 강렬하고 활동적 (댄스, 록, EDM) |
-| Instrumentalness | 보컬이 거의 없는 연주곡 |
-| Valence | 밝고 긍정적인 정서 |
+| ~75 이하 | 매우 느림 (발라드, 앰비언트) |
+| 76~95 | 느긋함 (미드템포 발라드, R&B) |
+| 96~115 | 보통 (팝, 미드템포 댄스) |
+| 116~130 | 업비트 (댄스, 하우스) |
+| 131 이상 | 빠름 (EDM, 트랩, 펑크) |
 
-### 음색
-| 항목 | 범위 | 의미 |
-|---|---|---|
-| 스펙트럴 센트로이드 | 1000Hz 미만 | 어둡고 저음 중심 |
-| 스펙트럴 센트로이드 | 2000~3500Hz | 밝은 편 (신스, 하이햇 강조) |
+**댄서빌리티 (rhythm.danceability)**
+DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 수 있는 상대값입니다.
+
+| 범위 | 의미 |
+|---|---|
+| 0 ~ 0.5 | 리듬이 불규칙하거나 약함 (자유박, 앰비언트) |
+| 0.5 ~ 1.0 | 리듬감 보통 |
+| 1.0 ~ 1.5 | 리듬이 뚜렷하고 규칙적 (댄스곡 다수 포함) |
+| 1.5 이상 | 매우 규칙적 · 반복적인 그루브 (EDM 등) |
+
+---
+
+## 2. 다이내믹스 / 라우드니스
+
+**평균 러프니스 (lowlevel.average_loudness, 0~1 정규화)**
+
+| 범위 | 의미 |
+|---|---|
+| 0.3 미만 | 조용하게 믹싱됨 |
+| 0.3 ~ 0.6 | 보통 수준의 라우드니스 |
+| 0.6 이상 | 강하게 마스터링됨 (라우드니스 워 성향) |
+
+**다이내믹 복잡도 (lowlevel.dynamic_complexity, dB 단위)**
+
+| 범위 | 의미 |
+|---|---|
+| 3 미만 | 다이내믹이 좁음 (강하게 압축된 믹스) |
+| 3 ~ 6 | 일반적인 대중음악 수준 |
+| 6 이상 | 다이내믹 폭이 넓음 (라이브, 클래식, 어쿠스틱 성향) |
+
+---
+
+## 3. 음색 (Timbre)
+
+**스펙트럴 센트로이드 (lowlevel.spectral_centroid.mean, Hz)**
+소리의 "밝기"를 나타내는 무게중심 주파수.
+
+| 범위 | 의미 |
+|---|---|
+| 1000 Hz 미만 | 어둡고 저음 중심 (베이스 강조, 따뜻한 톤) |
+| 1000 ~ 2000 Hz | 중간 밝기 (보컬 중심 믹스에 흔함) |
+| 2000 ~ 3500 Hz | 밝은 편 (신스, 하이햇 강조) |
+| 3500 Hz 이상 | 매우 밝음/샤프함 (harsh하게 들릴 수 있음) |
+
+**제로크로싱레이트 (lowlevel.zerocrossingrate.mean)**
+
+| 범위 | 의미 |
+|---|---|
+| 0.05 미만 | 부드럽고 톤(음정)이 뚜렷한 소리 위주 |
+| 0.05 ~ 0.1 | 타악기/노이즈 요소가 어느 정도 섞임 |
+| 0.1 이상 | 노이즈성·타격감이 강함 (퍼커시브, 디스토션) |
+
+---
+
+## 4. 감성 / 속성 지표 (0~1 정규화)
+
+**acousticness (mood_acoustic 모델, "acoustic" 클래스 확률)**
+
+| 범위 | 의미 |
+|---|---|
+| 0.3 미만 | 전자·신스 기반 사운드, 어쿠스틱 악기 비중 낮음 |
+| 0.3 ~ 0.6 | 전자 요소와 어쿠스틱 요소가 섞임 |
+| 0.6 이상 | 어쿠스틱 악기(기타, 피아노, 현악 등) 중심 사운드 |
+
+**energy (emomusic 모델의 arousal 값 정규화, 각성도·강렬함)**
+
+| 범위 | 의미 |
+|---|---|
+| 0.3 미만 | 차분하고 잔잔함 (발라드, 앰비언트) |
+| 0.3 ~ 0.6 | 보통 수준의 에너지 |
+| 0.6 이상 | 강렬하고 활동적 (댄스, 록, EDM) |
+
+**instrumentalness (voice_instrumental 모델, "instrumental" 클래스 확률)**
+
+| 범위 | 의미 |
+|---|---|
+| 0.3 미만 | 보컬이 뚜렷하게 존재 |
+| 0.3 ~ 0.6 | 보컬과 연주 비중이 비슷함 |
+| 0.6 이상 | 보컬이 거의 없는 연주곡 성격 |
+
+**valence (emomusic 모델의 valence 값 정규화, 정서적 긍정성)**
+
+| 범위 | 의미 |
+|---|---|
+| 0.3 미만 | 어둡고 우울한 정서 (마이너 성향과 자주 연관) |
+| 0.3 ~ 0.6 | 중립적인 정서 |
+| 0.6 이상 | 밝고 긍정적인 정서 (메이저 성향과 자주 연관) |
     """)
