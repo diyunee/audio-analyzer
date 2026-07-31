@@ -17,8 +17,8 @@ st.markdown("""
 html, body, [class*="css"]  { font-family: 'Manrope', sans-serif; }
 
 .stApp {
-    background: radial-gradient(circle at 20% 0%, #171B21 0%, #0D0F13 55%, #0A0B0E 100%);
-    color: #E7E9EC;
+    background: #FFFFFF;
+    color: #1A1D24;
 }
 
 .hero-title {
@@ -26,33 +26,33 @@ html, body, [class*="css"]  { font-family: 'Manrope', sans-serif; }
     font-size: 2.3rem;
     font-weight: 700;
     letter-spacing: -0.02em;
-    color: #F2F3F5;
+    color: #14171C;
     margin-bottom: 0;
 }
 .hero-sub {
     font-family: 'Manrope', sans-serif;
-    color: #8A93A3;
+    color: #6B7280;
     font-size: 0.95rem;
     margin-top: 4px;
 }
 
 /* VU 미터 바 (헤더 장식) */
 .vu-strip { display:flex; gap:4px; margin: 14px 0 22px 0; }
-.vu-bar { width: 6px; border-radius: 2px; background: #262B33; }
-.vu-bar.on-teal { background: linear-gradient(180deg, #57E0C9, #1F8F7B); }
-.vu-bar.on-amber { background: linear-gradient(180deg, #FFC069, #E08A2E); }
+.vu-bar { width: 6px; border-radius: 2px; background: #E5E7EB; }
+.vu-bar.on-teal { background: linear-gradient(180deg, #1F8F7B, #146B5C); }
+.vu-bar.on-amber { background: linear-gradient(180deg, #E08A2E, #B96E1C); }
 
 /* 결과 카드 */
 .metric-card {
-    background: #14171C;
-    border: 1px solid #22262D;
+    background: #F7F8FA;
+    border: 1px solid #E5E7EB;
     border-radius: 14px;
     padding: 18px 20px;
     margin-bottom: 12px;
 }
 .metric-label {
     font-size: 0.78rem;
-    color: #8A93A3;
+    color: #6B7280;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     margin-bottom: 6px;
@@ -60,40 +60,41 @@ html, body, [class*="css"]  { font-family: 'Manrope', sans-serif; }
 .metric-value {
     font-family: 'Space Mono', monospace;
     font-size: 1.6rem;
-    color: #57E0C9;
+    color: #1F8F7B;
     font-weight: 700;
 }
-.metric-value.amber { color: #FFC069; }
-.metric-sub { color: #6B7280; font-size: 0.8rem; margin-top: 4px; }
+.metric-value.amber { color: #B96E1C; }
+.metric-sub { color: #8A93A3; font-size: 0.8rem; margin-top: 4px; }
 
 .section-label {
     font-family: 'Space Mono', monospace;
-    color: #FFC069;
+    color: #B96E1C;
     font-size: 0.85rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     margin: 26px 0 10px 0;
-    border-bottom: 1px solid #22262D;
+    border-bottom: 1px solid #E5E7EB;
     padding-bottom: 6px;
 }
 
 .genre-row {
     display:flex; justify-content: space-between;
     font-family: 'Space Mono', monospace;
-    padding: 6px 0; border-bottom: 1px dashed #1E2229;
+    padding: 6px 0; border-bottom: 1px dashed #E5E7EB;
     font-size: 0.9rem;
+    color: #1A1D24;
 }
 
 .similarity-score {
     font-family: 'Space Mono', monospace;
     font-size: 3.2rem;
     font-weight: 700;
-    color: #57E0C9;
+    color: #1F8F7B;
     text-align: center;
 }
 
 section[data-testid="stFileUploader"] {
-    background: #14171C; border: 1px dashed #2A2F38; border-radius: 14px; padding: 10px;
+    background: #F7F8FA; border: 1px dashed #D1D5DB; border-radius: 14px; padding: 10px;
 }
 </style>
 """, unsafe_allow_html=True)
