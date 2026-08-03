@@ -472,8 +472,8 @@ def render_report(result):
 # ============================================================
 # 탭 구성
 # ============================================================
-tab1, tab2, tab3, tab4 = st.tabs([
-    "🎧 단일 곡 분석", "🔗 두 곡 유사도 비교", "📖 해석 가이드", "📚 라이브러리 & 유사곡"
+tab1, tab3, tab4 = st.tabs([
+    "🎧 단일 곡 분석", "📖 해석 가이드", "📚 라이브러리 & 유사곡"
 ])
 
 with tab1:
@@ -494,31 +494,6 @@ with tab1:
         if st.button("📚 라이브러리에 저장", key="save_single"):
             save_to_library(make_library_entry(result, uploaded.name))
             st.success(f"'{uploaded.name}'을(를) 라이브러리에 저장했어요.")
-
-with tab2:
-    colA, colB = st.columns(2)
-    with colA:
-        file_a = st.file_uploader("곡 A", type=["mp3", "wav"], key="a")
-    with colB:
-        file_b = st.file_uploader("곡 B", type=["mp3", "wav"], key="b")
-
-    if file_a and file_b:
-        ensure_models()
-        result_a = analyze_audio(file_a.getvalue(), file_a.name)
-        result_b = analyze_audio(file_b.getvalue(), file_b.name)
-        sim = cosine_similarity(result_a["embedding_vector"], result_b["embedding_vector"])
-
-        st.markdown('<div class="section-label">유사도 점수</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="similarity-score">{sim*100:.1f}%</div>', unsafe_allow_html=True)
-        st.caption("discogs-effnet 임베딩(1280차원) 간 코사인 유사도 기준입니다.")
-
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown(f"**{file_a.name}**")
-            render_report(result_a)
-        with c2:
-            st.markdown(f"**{file_b.name}**")
-            render_report(result_b)
 
 with tab3:
     st.markdown("""
