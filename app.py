@@ -102,6 +102,23 @@ html, body, [class*="css"]  { font-family: 'Manrope', sans-serif; }
 section[data-testid="stFileUploader"] {
     background: #F7F8FA; border: 1px dashed #D1D5DB; border-radius: 14px; padding: 10px;
 }
+
+.guide-content { font-size: 0.82rem; line-height: 1.55; color: #374151; }
+.guide-content h2 {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.0rem; color: #B96E1C;
+    margin: 22px 0 8px 0; border-bottom: 1px solid #E5E7EB; padding-bottom: 4px;
+}
+.guide-content h3 {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.85rem; color: #1F8F7B; margin: 12px 0 4px 0;
+}
+.guide-content p { font-size: 0.78rem; color: #6B7280; margin: 2px 0 8px 0; }
+.guide-content table { width: 100%; border-collapse: collapse; font-size: 0.76rem; margin-bottom: 10px; }
+.guide-content th, .guide-content td {
+    border-bottom: 1px dashed #E5E7EB; padding: 4px 8px; text-align: left;
+}
+.guide-content th { color: #6B7280; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -393,14 +410,20 @@ def save_to_library(entry):
 # ============================================================
 # 시각화 (레이더 차트 / 파형·스펙트로그램)
 # ============================================================
-def plot_radar(result, title="", figsize=(2.6, 2.6)):
-    labels = ["Acousticness", "Energy", "Instrumentalness", "Valence", "Danceability"]
+def plot_radar(result, title="", figsize=(2.8, 2.8)):
+    labels = [
+        METRIC_LABELS["acousticness"],
+        METRIC_LABELS["energy"],
+        METRIC_LABELS["danceability"],
+        METRIC_LABELS["valence"],
+        METRIC_LABELS["dynamic_complexity"],
+    ]
     values = [
         result["acousticness"],
         result["energy"],
-        result["instrumentalness"],
-        result["valence"],
         min(result["danceability"] / 1.5, 1.0),
+        result["valence"],
+        min(result["dynamic_complexity"] / 8, 1.0),
     ]
     values = values + values[:1]
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
@@ -412,13 +435,13 @@ def plot_radar(result, title="", figsize=(2.6, 2.6)):
     ax.plot(angles, values, color="#1F8F7B", linewidth=1.5)
     ax.fill(angles, values, color="#1F8F7B", alpha=0.25)
     ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels, fontsize=5.5, color="#1A1D24")
+    ax.set_xticklabels(labels, fontsize=5.0, color="#1A1D24")
     ax.set_yticklabels([])
-    ax.set_ylim(0, 1.15)
+    ax.set_ylim(0, 1.2)
     ax.tick_params(pad=1)
     if title:
         ax.set_title(title, color="#1A1D24", fontsize=7, pad=10)
-    fig.subplots_adjust(left=0.22, right=0.78, top=0.82, bottom=0.18)
+    fig.subplots_adjust(left=0.24, right=0.76, top=0.80, bottom=0.20)
     return fig
 
 
@@ -512,113 +535,111 @@ with tab1:
 
 with tab3:
     st.markdown("""
-## 1. 리듬 / 템포
+    <div class="guide-content">
 
-### BPM(템포)
-장르 예측 Top5와 각 장르별 전형적인 템포 중심값을 대조해서, 원본/절반/두배 BPM 중 가장 그럴듯한 값을 자동 채택합니다.
+    <h2>1. 리듬 / 템포</h2>
 
-| 범위 | 느낌 |
-|---|---|
-| ~75 이하 | 매우 느림 (발라드, 앰비언트) |
-| 76~95 | 느긋함 (미드템포 발라드, R&B) |
-| 96~115 | 보통 (팝, 미드템포 댄스) |
-| 116~130 | 업비트 (댄스, 하우스) |
-| 131 이상 | 빠름 (EDM, 트랩, 펑크) |
+    <h3>BPM(템포)</h3>
+    <p>장르 예측 Top5와 각 장르별 전형적인 템포 중심값을 대조해서, 원본/절반/두배 BPM 중 가장 그럴듯한 값을 자동 채택합니다.</p>
+    <table>
+    <tr><th>범위</th><th>느낌</th></tr>
+    <tr><td>~75 이하</td><td>매우 느림 (발라드, 앰비언트)</td></tr>
+    <tr><td>76~95</td><td>느긋함 (미드템포 발라드, R&amp;B)</td></tr>
+    <tr><td>96~115</td><td>보통 (팝, 미드템포 댄스)</td></tr>
+    <tr><td>116~130</td><td>업비트 (댄스, 하우스)</td></tr>
+    <tr><td>131 이상</td><td>빠름 (EDM, 트랩, 펑크)</td></tr>
+    </table>
 
-### Danceability(댄서빌리티)
-DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 수 있는 상대값입니다.
+    <h3>Danceability(댄서빌리티)</h3>
+    <p>DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 수 있는 상대값입니다.</p>
+    <table>
+    <tr><th>범위</th><th>의미</th></tr>
+    <tr><td>0 ~ 0.5</td><td>리듬이 불규칙하거나 약함 (자유박, 앰비언트)</td></tr>
+    <tr><td>0.5 ~ 1.0</td><td>리듬감 보통</td></tr>
+    <tr><td>1.0 ~ 1.5</td><td>리듬이 뚜렷하고 규칙적 (댄스곡 다수 포함)</td></tr>
+    <tr><td>1.5 이상</td><td>매우 규칙적 · 반복적인 그루브 (EDM 등)</td></tr>
+    </table>
 
-| 범위 | 의미 |
-|---|---|
-| 0 ~ 0.5 | 리듬이 불규칙하거나 약함 (자유박, 앰비언트) |
-| 0.5 ~ 1.0 | 리듬감 보통 |
-| 1.0 ~ 1.5 | 리듬이 뚜렷하고 규칙적 (댄스곡 다수 포함) |
-| 1.5 이상 | 매우 규칙적 · 반복적인 그루브 (EDM 등) |
+    <h2>2. 다이내믹스 / 라우드니스</h2>
 
----
+    <h3>Loudness(러프니스)</h3>
+    <p>0~1 정규화 값</p>
+    <table>
+    <tr><th>범위</th><th>의미</th></tr>
+    <tr><td>0.3 미만</td><td>조용하게 믹싱됨</td></tr>
+    <tr><td>0.3 ~ 0.6</td><td>보통 수준의 라우드니스</td></tr>
+    <tr><td>0.6 이상</td><td>강하게 마스터링됨 (라우드니스 워 성향)</td></tr>
+    </table>
 
-## 2. 다이내믹스 / 라우드니스
+    <h3>Dynamic Complexity(다이내믹)</h3>
+    <p>dB 단위</p>
+    <table>
+    <tr><th>범위</th><th>의미</th></tr>
+    <tr><td>3 미만</td><td>다이내믹이 좁음 (강하게 압축된 믹스)</td></tr>
+    <tr><td>3 ~ 6</td><td>일반적인 대중음악 수준</td></tr>
+    <tr><td>6 이상</td><td>다이내믹 폭이 넓음 (라이브, 클래식, 어쿠스틱 성향)</td></tr>
+    </table>
 
-### Loudness(러프니스)
-0~1 정규화 값
+    <h2>3. 음색 (Timbre)</h2>
 
-| 범위 | 의미 |
-|---|---|
-| 0.3 미만 | 조용하게 믹싱됨 |
-| 0.3 ~ 0.6 | 보통 수준의 라우드니스 |
-| 0.6 이상 | 강하게 마스터링됨 (라우드니스 워 성향) |
+    <h3>Spectral Centroid(음색밝기)</h3>
+    <p>소리의 "밝기"를 나타내는 무게중심 주파수 (Hz)</p>
+    <table>
+    <tr><th>범위</th><th>의미</th></tr>
+    <tr><td>1000 Hz 미만</td><td>어둡고 저음 중심 (베이스 강조, 따뜻한 톤)</td></tr>
+    <tr><td>1000 ~ 2000 Hz</td><td>중간 밝기 (보컬 중심 믹스에 흔함)</td></tr>
+    <tr><td>2000 ~ 3500 Hz</td><td>밝은 편 (신스, 하이햇 강조)</td></tr>
+    <tr><td>3500 Hz 이상</td><td>매우 밝음/샤프함 (harsh하게 들릴 수 있음)</td></tr>
+    </table>
 
-### Dynamic Complexity(다이내믹)
-dB 단위
+    <h3>Zero Crossing Rate(타격감)</h3>
+    <table>
+    <tr><th>범위</th><th>의미</th></tr>
+    <tr><td>0.05 미만</td><td>부드럽고 톤(음정)이 뚜렷한 소리 위주</td></tr>
+    <tr><td>0.05 ~ 0.1</td><td>타악기/노이즈 요소가 어느 정도 섞임</td></tr>
+    <tr><td>0.1 이상</td><td>노이즈성·타격감이 강함 (퍼커시브, 디스토션)</td></tr>
+    </table>
 
-| 범위 | 의미 |
-|---|---|
-| 3 미만 | 다이내믹이 좁음 (강하게 압축된 믹스) |
-| 3 ~ 6 | 일반적인 대중음악 수준 |
-| 6 이상 | 다이내믹 폭이 넓음 (라이브, 클래식, 어쿠스틱 성향) |
+    <h2>4. 감성 / 속성 지표 (0~1 정규화)</h2>
 
----
+    <h3>Acousticness(어쿠스틱함)</h3>
+    <p>mood_acoustic 모델, "acoustic" 클래스 확률</p>
+    <table>
+    <tr><th>범위</th><th>의미</th></tr>
+    <tr><td>0.3 미만</td><td>전자·신스 기반 사운드, 어쿠스틱 악기 비중 낮음</td></tr>
+    <tr><td>0.3 ~ 0.6</td><td>전자 요소와 어쿠스틱 요소가 섞임</td></tr>
+    <tr><td>0.6 이상</td><td>어쿠스틱 악기(기타, 피아노, 현악 등) 중심 사운드</td></tr>
+    </table>
 
-## 3. 음색 (Timbre)
+    <h3>Energy(에너지)</h3>
+    <p>emomusic 모델의 arousal 값 정규화, 각성도·강렬함</p>
+    <table>
+    <tr><th>범위</th><th>의미</th></tr>
+    <tr><td>0.3 미만</td><td>차분하고 잔잔함 (발라드, 앰비언트)</td></tr>
+    <tr><td>0.3 ~ 0.6</td><td>보통 수준의 에너지</td></tr>
+    <tr><td>0.6 이상</td><td>강렬하고 활동적 (댄스, 록, EDM)</td></tr>
+    </table>
 
-### Spectral Centroid(음색밝기)
-소리의 "밝기"를 나타내는 무게중심 주파수 (Hz)
+    <h3>Instrumentalness(보컬없음)</h3>
+    <p>voice_instrumental 모델, "instrumental" 클래스 확률</p>
+    <table>
+    <tr><th>범위</th><th>의미</th></tr>
+    <tr><td>0.3 미만</td><td>보컬이 뚜렷하게 존재</td></tr>
+    <tr><td>0.3 ~ 0.6</td><td>보컬과 연주 비중이 비슷함</td></tr>
+    <tr><td>0.6 이상</td><td>보컬이 거의 없는 연주곡 성격</td></tr>
+    </table>
 
-| 범위 | 의미 |
-|---|---|
-| 1000 Hz 미만 | 어둡고 저음 중심 (베이스 강조, 따뜻한 톤) |
-| 1000 ~ 2000 Hz | 중간 밝기 (보컬 중심 믹스에 흔함) |
-| 2000 ~ 3500 Hz | 밝은 편 (신스, 하이햇 강조) |
-| 3500 Hz 이상 | 매우 밝음/샤프함 (harsh하게 들릴 수 있음) |
+    <h3>Valence(긍정정서)</h3>
+    <p>emomusic 모델의 valence 값 정규화, 정서적 긍정성</p>
+    <table>
+    <tr><th>범위</th><th>의미</th></tr>
+    <tr><td>0.3 미만</td><td>어둡고 우울한 정서 (마이너 성향과 자주 연관)</td></tr>
+    <tr><td>0.3 ~ 0.6</td><td>중립적인 정서</td></tr>
+    <tr><td>0.6 이상</td><td>밝고 긍정적인 정서 (메이저 성향과 자주 연관)</td></tr>
+    </table>
 
-### Zero Crossing Rate(타격감)
-
-| 범위 | 의미 |
-|---|---|
-| 0.05 미만 | 부드럽고 톤(음정)이 뚜렷한 소리 위주 |
-| 0.05 ~ 0.1 | 타악기/노이즈 요소가 어느 정도 섞임 |
-| 0.1 이상 | 노이즈성·타격감이 강함 (퍼커시브, 디스토션) |
-
----
-
-## 4. 감성 / 속성 지표 (0~1 정규화)
-
-### Acousticness(어쿠스틱함)
-mood_acoustic 모델, "acoustic" 클래스 확률
-
-| 범위 | 의미 |
-|---|---|
-| 0.3 미만 | 전자·신스 기반 사운드, 어쿠스틱 악기 비중 낮음 |
-| 0.3 ~ 0.6 | 전자 요소와 어쿠스틱 요소가 섞임 |
-| 0.6 이상 | 어쿠스틱 악기(기타, 피아노, 현악 등) 중심 사운드 |
-
-### Energy(에너지)
-emomusic 모델의 arousal 값 정규화, 각성도·강렬함
-
-| 범위 | 의미 |
-|---|---|
-| 0.3 미만 | 차분하고 잔잔함 (발라드, 앰비언트) |
-| 0.3 ~ 0.6 | 보통 수준의 에너지 |
-| 0.6 이상 | 강렬하고 활동적 (댄스, 록, EDM) |
-
-### Instrumentalness(보컬없음)
-voice_instrumental 모델, "instrumental" 클래스 확률
-
-| 범위 | 의미 |
-|---|---|
-| 0.3 미만 | 보컬이 뚜렷하게 존재 |
-| 0.3 ~ 0.6 | 보컬과 연주 비중이 비슷함 |
-| 0.6 이상 | 보컬이 거의 없는 연주곡 성격 |
-
-### Valence(긍정정서)
-emomusic 모델의 valence 값 정규화, 정서적 긍정성
-
-| 범위 | 의미 |
-|---|---|
-| 0.3 미만 | 어둡고 우울한 정서 (마이너 성향과 자주 연관) |
-| 0.3 ~ 0.6 | 중립적인 정서 |
-| 0.6 이상 | 밝고 긍정적인 정서 (메이저 성향과 자주 연관) |
-    """)
+    </div>
+    """, unsafe_allow_html=True)
 
 with tab4:
     st.markdown('<div class="section-label">일괄 분석 (여러 곡 한 번에)</div>', unsafe_allow_html=True)
