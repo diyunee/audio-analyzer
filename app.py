@@ -412,13 +412,13 @@ def plot_radar(result, title="", figsize=(2.6, 2.6)):
     ax.plot(angles, values, color="#1F8F7B", linewidth=1.5)
     ax.fill(angles, values, color="#1F8F7B", alpha=0.25)
     ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels, fontsize=6.5, color="#1A1D24")
+    ax.set_xticklabels(labels, fontsize=5.5, color="#1A1D24")
     ax.set_yticklabels([])
-    ax.set_ylim(0, 1)
-    ax.tick_params(pad=2)
+    ax.set_ylim(0, 1.15)
+    ax.tick_params(pad=1)
     if title:
-        ax.set_title(title, color="#1A1D24", fontsize=8, pad=14)
-    plt.tight_layout()
+        ax.set_title(title, color="#1A1D24", fontsize=7, pad=10)
+    fig.subplots_adjust(left=0.22, right=0.78, top=0.82, bottom=0.18)
     return fig
 
 
@@ -514,7 +514,7 @@ with tab3:
     st.markdown("""
 ## 1. 리듬 / 템포
 
-**BPM (rhythm.bpm → 장르 기반 옥타브 보정 적용)**
+### BPM(템포)
 장르 예측 Top5와 각 장르별 전형적인 템포 중심값을 대조해서, 원본/절반/두배 BPM 중 가장 그럴듯한 값을 자동 채택합니다.
 
 | 범위 | 느낌 |
@@ -525,7 +525,7 @@ with tab3:
 | 116~130 | 업비트 (댄스, 하우스) |
 | 131 이상 | 빠름 (EDM, 트랩, 펑크) |
 
-**댄서빌리티 (rhythm.danceability)**
+### Danceability(댄서빌리티)
 DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 수 있는 상대값입니다.
 
 | 범위 | 의미 |
@@ -539,7 +539,8 @@ DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 
 
 ## 2. 다이내믹스 / 라우드니스
 
-**평균 러프니스 (lowlevel.average_loudness, 0~1 정규화)**
+### Loudness(러프니스)
+0~1 정규화 값
 
 | 범위 | 의미 |
 |---|---|
@@ -547,7 +548,8 @@ DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 
 | 0.3 ~ 0.6 | 보통 수준의 라우드니스 |
 | 0.6 이상 | 강하게 마스터링됨 (라우드니스 워 성향) |
 
-**다이내믹 복잡도 (lowlevel.dynamic_complexity, dB 단위)**
+### Dynamic Complexity(다이내믹)
+dB 단위
 
 | 범위 | 의미 |
 |---|---|
@@ -559,8 +561,8 @@ DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 
 
 ## 3. 음색 (Timbre)
 
-**스펙트럴 센트로이드 (lowlevel.spectral_centroid.mean, Hz)**
-소리의 "밝기"를 나타내는 무게중심 주파수.
+### Spectral Centroid(음색밝기)
+소리의 "밝기"를 나타내는 무게중심 주파수 (Hz)
 
 | 범위 | 의미 |
 |---|---|
@@ -569,7 +571,7 @@ DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 
 | 2000 ~ 3500 Hz | 밝은 편 (신스, 하이햇 강조) |
 | 3500 Hz 이상 | 매우 밝음/샤프함 (harsh하게 들릴 수 있음) |
 
-**제로크로싱레이트 (lowlevel.zerocrossingrate.mean)**
+### Zero Crossing Rate(타격감)
 
 | 범위 | 의미 |
 |---|---|
@@ -581,7 +583,8 @@ DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 
 
 ## 4. 감성 / 속성 지표 (0~1 정규화)
 
-**acousticness (mood_acoustic 모델, "acoustic" 클래스 확률)**
+### Acousticness(어쿠스틱함)
+mood_acoustic 모델, "acoustic" 클래스 확률
 
 | 범위 | 의미 |
 |---|---|
@@ -589,7 +592,8 @@ DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 
 | 0.3 ~ 0.6 | 전자 요소와 어쿠스틱 요소가 섞임 |
 | 0.6 이상 | 어쿠스틱 악기(기타, 피아노, 현악 등) 중심 사운드 |
 
-**energy (emomusic 모델의 arousal 값 정규화, 각성도·강렬함)**
+### Energy(에너지)
+emomusic 모델의 arousal 값 정규화, 각성도·강렬함
 
 | 범위 | 의미 |
 |---|---|
@@ -597,7 +601,8 @@ DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 
 | 0.3 ~ 0.6 | 보통 수준의 에너지 |
 | 0.6 이상 | 강렬하고 활동적 (댄스, 록, EDM) |
 
-**instrumentalness (voice_instrumental 모델, "instrumental" 클래스 확률)**
+### Instrumentalness(보컬없음)
+voice_instrumental 모델, "instrumental" 클래스 확률
 
 | 범위 | 의미 |
 |---|---|
@@ -605,7 +610,8 @@ DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 
 | 0.3 ~ 0.6 | 보컬과 연주 비중이 비슷함 |
 | 0.6 이상 | 보컬이 거의 없는 연주곡 성격 |
 
-**valence (emomusic 모델의 valence 값 정규화, 정서적 긍정성)**
+### Valence(긍정정서)
+emomusic 모델의 valence 값 정규화, 정서적 긍정성
 
 | 범위 | 의미 |
 |---|---|
@@ -658,7 +664,8 @@ with tab4:
                 lc, rc = st.columns([3, 1])
                 with lc:
                     st.markdown(f"""
-                    <table style="width:100%; font-family:'Space Mono',monospace; font-size:0.8rem;">
+                    <table style="width:100%; table-layout:fixed; font-family:'Space Mono',monospace; font-size:0.8rem;">
+                    <colgroup><col style="width:55%"><col style="width:45%"></colgroup>
                     <tr><td style="color:#6B7280;">{METRIC_LABELS['duration']}</td><td>{format_duration(entry['duration'])}</td></tr>
                     <tr><td style="color:#6B7280;">{METRIC_LABELS['bpm']}</td><td>{entry['bpm']:.1f}</td></tr>
                     <tr><td style="color:#6B7280;">{METRIC_LABELS['danceability']}</td><td>{entry['danceability']:.2f}</td></tr>
