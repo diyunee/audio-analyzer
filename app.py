@@ -51,25 +51,26 @@ html, body, [class*="css"]  { font-family: 'Manrope', sans-serif; }
 .metric-card {
     background: #F7F8FA;
     border: 1px solid #E5E7EB;
-    border-radius: 14px;
-    padding: 18px 20px;
-    margin-bottom: 12px;
+    border-radius: 10px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
 }
 .metric-label {
-    font-size: 0.78rem;
+    font-size: 0.65rem;
     color: #6B7280;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: 6px;
+    letter-spacing: 0.05em;
+    margin-bottom: 3px;
 }
 .metric-value {
     font-family: 'Space Mono', monospace;
-    font-size: 1.6rem;
+    font-size: 1.05rem;
     color: #1F8F7B;
     font-weight: 700;
+    line-height: 1.2;
 }
 .metric-value.amber { color: #B96E1C; }
-.metric-sub { color: #8A93A3; font-size: 0.8rem; margin-top: 4px; }
+.metric-sub { color: #8A93A3; font-size: 0.65rem; margin-top: 2px; line-height: 1.2; }
 
 .section-label {
     font-family: 'Space Mono', monospace;
@@ -390,35 +391,31 @@ def plot_radar(result, title=""):
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
     angles += angles[:1]
 
-    fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(polar=True))
+    fig, ax = plt.subplots(figsize=(2.6, 2.6), subplot_kw=dict(polar=True))
     fig.patch.set_facecolor("white")
     ax.set_facecolor("#F7F8FA")
-    ax.plot(angles, values, color="#1F8F7B", linewidth=2)
+    ax.plot(angles, values, color="#1F8F7B", linewidth=1.5)
     ax.fill(angles, values, color="#1F8F7B", alpha=0.25)
     ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(labels, fontsize=9, color="#1A1D24")
+    ax.set_xticklabels(labels, fontsize=6.5, color="#1A1D24")
     ax.set_yticklabels([])
     ax.set_ylim(0, 1)
+    ax.tick_params(pad=2)
     if title:
-        ax.set_title(title, color="#1A1D24", fontsize=11, pad=20)
+        ax.set_title(title, color="#1A1D24", fontsize=8, pad=14)
+    plt.tight_layout()
     return fig
 
 
-def plot_waveform_spectrogram(audio_array, sr=16000):
-    fig, axes = plt.subplots(2, 1, figsize=(9, 4.5))
+def plot_waveform(audio_array, sr=16000):
+    fig, ax = plt.subplots(figsize=(6, 1.4))
     fig.patch.set_facecolor("white")
-
     t = np.linspace(0, len(audio_array) / sr, len(audio_array))
-    axes[0].plot(t, audio_array, color="#1F8F7B", linewidth=0.4)
-    axes[0].set_title("Waveform", fontsize=10, color="#1A1D24")
-    axes[0].set_facecolor("#F7F8FA")
-    axes[0].set_xlabel("Time (s)", fontsize=8)
-
-    axes[1].specgram(audio_array, Fs=sr, cmap="viridis")
-    axes[1].set_title("Spectrogram", fontsize=10, color="#1A1D24")
-    axes[1].set_xlabel("Time (s)", fontsize=8)
-    axes[1].set_ylabel("Frequency (Hz)", fontsize=8)
-
+    ax.plot(t, audio_array, color="#1F8F7B", linewidth=0.3)
+    ax.set_facecolor("#F7F8FA")
+    ax.set_xlabel("Time (s)", fontsize=7)
+    ax.set_yticks([])
+    ax.tick_params(labelsize=7)
     plt.tight_layout()
     return fig
 
@@ -435,20 +432,17 @@ def metric_card(label, value, sub="", amber=False):
 
 
 def render_report(result):
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         metric_card("길이", format_duration(result["duration"]))
     with c2:
-        metric_card("BPM (보정됨)", f'{result["bpm"]:.1f}', sub=interpret_bpm(result["bpm"]))
+        metric_card("BPM", f'{result["bpm"]:.1f}', sub=interpret_bpm(result["bpm"]))
     with c3:
         metric_card("댄서빌리티", f'{result["danceability"]:.2f}', sub=interpret_danceability(result["danceability"]), amber=True)
     with c4:
-        metric_card("다이내믹 범위", f'{result["dynamic_complexity"]:.2f} dB', sub=interpret_dynamic_complexity(result["dynamic_complexity"]))
-
-    st.markdown('<div class="section-label">다이내믹스 / 라우드니스</div>', unsafe_allow_html=True)
-    c1, = st.columns(1)
-    with c1:
-        metric_card("평균 러프니스", f'{result["loudness"]:.2f}', sub=interpret_loudness(result["loudness"]))
+        metric_card("다이내믹", f'{result["dynamic_complexity"]:.2f} dB', sub=interpret_dynamic_complexity(result["dynamic_complexity"]))
+    with c5:
+        metric_card("러프니스", f'{result["loudness"]:.2f}', sub=interpret_loudness(result["loudness"]))
 
     st.markdown('<div class="section-label">감성 / 속성 지표</div>', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
@@ -464,9 +458,9 @@ def render_report(result):
     st.markdown('<div class="section-label">음색 (Timbre)</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
-        metric_card("스펙트럴 센트로이드 (밝기)", f'{result["spectral_centroid"]:.0f} Hz', sub=interpret_spectral_centroid(result["spectral_centroid"]))
+        metric_card("스펙트럴 센트로이드", f'{result["spectral_centroid"]:.0f} Hz', sub=interpret_spectral_centroid(result["spectral_centroid"]))
     with c2:
-        metric_card("제로크로싱레이트 (타격감)", f'{result["zcr"]:.4f}', sub=interpret_zcr(result["zcr"]))
+        metric_card("제로크로싱레이트", f'{result["zcr"]:.4f}', sub=interpret_zcr(result["zcr"]))
 
     st.markdown('<div class="section-label">장르 예측 TOP 5</div>', unsafe_allow_html=True)
     for label, prob in result["top_genres"]:
@@ -489,11 +483,13 @@ with tab1:
         result = analyze_audio(uploaded.getvalue(), uploaded.name)
         render_report(result)
 
-        st.markdown('<div class="section-label">파형 / 스펙트로그램</div>', unsafe_allow_html=True)
-        st.pyplot(plot_waveform_spectrogram(result["audio_16k"]))
-
-        st.markdown('<div class="section-label">감성 프로필 (레이더)</div>', unsafe_allow_html=True)
-        st.pyplot(plot_radar(result, title=uploaded.name))
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            st.markdown('<div class="section-label">파형</div>', unsafe_allow_html=True)
+            st.pyplot(plot_waveform(result["audio_16k"]), use_container_width=False)
+        with c2:
+            st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
+            st.pyplot(plot_radar(result, title=uploaded.name), use_container_width=False)
 
         if st.button("📚 라이브러리에 저장", key="save_single"):
             save_to_library(make_library_entry(result, uploaded.name))
@@ -689,7 +685,9 @@ with tab4:
             st.caption("비교할 다른 곡이 아직 없어요.")
 
         st.markdown('<div class="section-label">감성 프로필 (레이더)</div>', unsafe_allow_html=True)
-        st.pyplot(plot_radar(selected, title=selected_name))
+        rc1, rc2 = st.columns([1, 3])
+        with rc1:
+            st.pyplot(plot_radar(selected, title=selected_name), use_container_width=False)
 
         if st.button("🗑️ 라이브러리 전체 삭제"):
             if os.path.exists(LIBRARY_PATH):
