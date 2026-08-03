@@ -1,9 +1,14 @@
 import os
 import json
 import urllib.request
+from collections import Counter
 
 import numpy as np
+import pandas as pd
 import streamlit as st
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 # ============================================================
 # 페이지 설정 + 커스텀 스타일 (스튜디오 VU미터 컨셉)
@@ -131,6 +136,7 @@ MODEL_URLS = {
     "emomusic-msd-musicnn-2.json": "https://essentia.upf.edu/models/classification-heads/emomusic/emomusic-msd-musicnn-2.json",
 }
 MODEL_DIR = "models"
+LIBRARY_PATH = "library_data.json"
 
 
 @st.cache_resource(show_spinner="분석 모델 준비 중 (최초 1회, 1~2분 소요)...")
@@ -331,12 +337,90 @@ def analyze_audio(file_bytes, filename):
         "valence": valence,
         "top_genres": top_genres,
         "embedding_vector": np.mean(embeddings, axis=0).tolist(),
+        "audio_16k": audio_16k,  # 파형/스펙트로그램용 (라이브러리에는 저장 안 함)
     }
 
 
 def cosine_similarity(vec_a, vec_b):
     a, b = np.array(vec_a), np.array(vec_b)
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+
+# ============================================================
+# 라이브러리 저장/불러오기
+# ============================================================
+def make_library_entry(result, filename):
+    entry = {k: v for k, v in result.items() if k != "audio_16k"}
+    entry["filename"] = filename
+    return entry
+
+
+def load_library():
+    if os.path.exists(LIBRARY_PATH):
+        try:
+            with open(LIBRARY_PATH) as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+
+def save_to_library(entry):
+    lib = load_library()
+    lib = [s for s in lib if s["filename"] != entry["filename"]]
+    lib.append(entry)
+    with open(LIBRARY_PATH, "w") as f:
+        json.dump(lib, f)
+    return lib
+
+
+# ============================================================
+# 시각화 (레이더 차트 / 파형·스펙트로그램)
+# ============================================================
+def plot_radar(result, title=""):
+    labels = ["Acousticness", "Energy", "Instrumentalness", "Valence", "Danceability"]
+    values = [
+        result["acousticness"],
+        result["energy"],
+        result["instrumentalness"],
+        result["valence"],
+        min(result["danceability"] / 1.5, 1.0),
+    ]
+    values = values + values[:1]
+    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+    angles += angles[:1]
+
+    fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(polar=True))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("#F7F8FA")
+    ax.plot(angles, values, color="#1F8F7B", linewidth=2)
+    ax.fill(angles, values, color="#1F8F7B", alpha=0.25)
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels, fontsize=9, color="#1A1D24")
+    ax.set_yticklabels([])
+    ax.set_ylim(0, 1)
+    if title:
+        ax.set_title(title, color="#1A1D24", fontsize=11, pad=20)
+    return fig
+
+
+def plot_waveform_spectrogram(audio_array, sr=16000):
+    fig, axes = plt.subplots(2, 1, figsize=(9, 4.5))
+    fig.patch.set_facecolor("white")
+
+    t = np.linspace(0, len(audio_array) / sr, len(audio_array))
+    axes[0].plot(t, audio_array, color="#1F8F7B", linewidth=0.4)
+    axes[0].set_title("Waveform", fontsize=10, color="#1A1D24")
+    axes[0].set_facecolor("#F7F8FA")
+    axes[0].set_xlabel("Time (s)", fontsize=8)
+
+    axes[1].specgram(audio_array, Fs=sr, cmap="viridis")
+    axes[1].set_title("Spectrogram", fontsize=10, color="#1A1D24")
+    axes[1].set_xlabel("Time (s)", fontsize=8)
+    axes[1].set_ylabel("Frequency (Hz)", fontsize=8)
+
+    plt.tight_layout()
+    return fig
 
 
 def metric_card(label, value, sub="", amber=False):
@@ -392,9 +476,11 @@ def render_report(result):
 
 
 # ============================================================
-# 탭 구성: 단일 분석 / 유사도 비교
+# 탭 구성
 # ============================================================
-tab1, tab2, tab3 = st.tabs(["🎧 단일 곡 분석", "🔗 두 곡 유사도 비교", "📖 해석 가이드"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "🎧 단일 곡 분석", "🔗 두 곡 유사도 비교", "📖 해석 가이드", "📚 라이브러리 & 유사곡"
+])
 
 with tab1:
     uploaded = st.file_uploader("음원 파일 업로드 (mp3, wav)", type=["mp3", "wav"], key="single")
@@ -402,6 +488,16 @@ with tab1:
         ensure_models()
         result = analyze_audio(uploaded.getvalue(), uploaded.name)
         render_report(result)
+
+        st.markdown('<div class="section-label">파형 / 스펙트로그램</div>', unsafe_allow_html=True)
+        st.pyplot(plot_waveform_spectrogram(result["audio_16k"]))
+
+        st.markdown('<div class="section-label">감성 프로필 (레이더)</div>', unsafe_allow_html=True)
+        st.pyplot(plot_radar(result, title=uploaded.name))
+
+        if st.button("📚 라이브러리에 저장", key="save_single"):
+            save_to_library(make_library_entry(result, uploaded.name))
+            st.success(f"'{uploaded.name}'을(를) 라이브러리에 저장했어요.")
 
 with tab2:
     colA, colB = st.columns(2)
@@ -427,6 +523,7 @@ with tab2:
         with c2:
             st.markdown(f"**{file_b.name}**")
             render_report(result_b)
+
 with tab3:
     st.markdown("""
 ## 1. 리듬 / 템포
@@ -530,3 +627,71 @@ DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 
 | 0.3 ~ 0.6 | 중립적인 정서 |
 | 0.6 이상 | 밝고 긍정적인 정서 (메이저 성향과 자주 연관) |
     """)
+
+with tab4:
+    st.markdown('<div class="section-label">일괄 분석 (여러 곡 한 번에)</div>', unsafe_allow_html=True)
+    batch_files = st.file_uploader(
+        "음원 파일 여러 개 업로드", type=["mp3", "wav"], accept_multiple_files=True, key="batch"
+    )
+    if batch_files:
+        ensure_models()
+        batch_results = []
+        progress = st.progress(0)
+        for i, f in enumerate(batch_files):
+            r = analyze_audio(f.getvalue(), f.name)
+            entry = make_library_entry(r, f.name)
+            save_to_library(entry)
+            batch_results.append(entry)
+            progress.progress((i + 1) / len(batch_files))
+        st.success(f"{len(batch_files)}곡 분석 및 라이브러리 저장 완료!")
+
+        df = pd.DataFrame(batch_results)
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            metric_card("평균 BPM", f'{df["bpm"].mean():.1f}')
+        with c2:
+            metric_card("평균 댄서빌리티", f'{df["danceability"].mean():.2f}', amber=True)
+        with c3:
+            metric_card("평균 Energy", f'{df["energy"].mean():.2f}', amber=True)
+        with c4:
+            metric_card("평균 Valence", f'{df["valence"].mean():.2f}')
+
+        top1_genres = [r["top_genres"][0][0] for r in batch_results]
+        common = Counter(top1_genres).most_common(3)
+        st.markdown('<div class="section-label">가장 흔한 장르 (Top1 기준)</div>', unsafe_allow_html=True)
+        for g, cnt in common:
+            st.markdown(f'<div class="genre-row"><span>{g}</span><span>{cnt}곡</span></div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="section-label">저장된 라이브러리</div>', unsafe_allow_html=True)
+    library = load_library()
+    if not library:
+        st.caption("아직 저장된 곡이 없어요. 단일 분석 탭에서 저장하거나 위에서 일괄 분석을 실행해보세요.")
+    else:
+        table_df = pd.DataFrame(library)[
+            ["filename", "bpm", "danceability", "energy", "valence", "acousticness", "instrumentalness"]
+        ]
+        st.dataframe(table_df, use_container_width=True)
+
+        st.markdown('<div class="section-label">유사곡 추천</div>', unsafe_allow_html=True)
+        selected_name = st.selectbox("기준 곡 선택", [s["filename"] for s in library])
+        selected = next(s for s in library if s["filename"] == selected_name)
+
+        others = [s for s in library if s["filename"] != selected_name]
+        if others:
+            sims = [
+                (s["filename"], cosine_similarity(selected["embedding_vector"], s["embedding_vector"]))
+                for s in others
+            ]
+            sims.sort(key=lambda x: x[1], reverse=True)
+            for name, score in sims[:3]:
+                st.markdown(f'<div class="genre-row"><span>{name}</span><span>{score*100:.1f}%</span></div>', unsafe_allow_html=True)
+        else:
+            st.caption("비교할 다른 곡이 아직 없어요.")
+
+        st.markdown('<div class="section-label">감성 프로필 (레이더)</div>', unsafe_allow_html=True)
+        st.pyplot(plot_radar(selected, title=selected_name))
+
+        if st.button("🗑️ 라이브러리 전체 삭제"):
+            if os.path.exists(LIBRARY_PATH):
+                os.remove(LIBRARY_PATH)
+            st.rerun()
