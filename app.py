@@ -250,6 +250,21 @@ def interpret_valence(v):
     return "밝고 긍정적인 정서 (메이저 성향과 자주 연관)"
 
 
+METRIC_LABELS = {
+    "duration": "Duration(길이)",
+    "bpm": "BPM(템포)",
+    "danceability": "Danceability(댄서빌리티)",
+    "dynamic_complexity": "Dynamic Complexity(다이내믹)",
+    "loudness": "Loudness(러프니스)",
+    "acousticness": "Acousticness(어쿠스틱함)",
+    "energy": "Energy(에너지)",
+    "instrumentalness": "Instrumentalness(보컬없음)",
+    "valence": "Valence(긍정정서)",
+    "spectral_centroid": "Spectral Centroid(음색밝기)",
+    "zcr": "Zero Crossing Rate(타격감)",
+}
+
+
 # ============================================================
 # 핵심 분석 함수
 # ============================================================
@@ -378,7 +393,7 @@ def save_to_library(entry):
 # ============================================================
 # 시각화 (레이더 차트 / 파형·스펙트로그램)
 # ============================================================
-def plot_radar(result, title=""):
+def plot_radar(result, title="", figsize=(2.6, 2.6)):
     labels = ["Acousticness", "Energy", "Instrumentalness", "Valence", "Danceability"]
     values = [
         result["acousticness"],
@@ -391,7 +406,7 @@ def plot_radar(result, title=""):
     angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
     angles += angles[:1]
 
-    fig, ax = plt.subplots(figsize=(2.6, 2.6), subplot_kw=dict(polar=True))
+    fig, ax = plt.subplots(figsize=figsize, subplot_kw=dict(polar=True))
     fig.patch.set_facecolor("white")
     ax.set_facecolor("#F7F8FA")
     ax.plot(angles, values, color="#1F8F7B", linewidth=1.5)
@@ -434,33 +449,33 @@ def metric_card(label, value, sub="", amber=False):
 def render_report(result):
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
-        metric_card("길이", format_duration(result["duration"]))
+        metric_card(METRIC_LABELS["duration"], format_duration(result["duration"]))
     with c2:
-        metric_card("BPM", f'{result["bpm"]:.1f}', sub=interpret_bpm(result["bpm"]))
+        metric_card(METRIC_LABELS["bpm"], f'{result["bpm"]:.1f}', sub=interpret_bpm(result["bpm"]))
     with c3:
-        metric_card("댄서빌리티", f'{result["danceability"]:.2f}', sub=interpret_danceability(result["danceability"]), amber=True)
+        metric_card(METRIC_LABELS["danceability"], f'{result["danceability"]:.2f}', sub=interpret_danceability(result["danceability"]), amber=True)
     with c4:
-        metric_card("다이내믹", f'{result["dynamic_complexity"]:.2f} dB', sub=interpret_dynamic_complexity(result["dynamic_complexity"]))
+        metric_card(METRIC_LABELS["dynamic_complexity"], f'{result["dynamic_complexity"]:.2f} dB', sub=interpret_dynamic_complexity(result["dynamic_complexity"]))
     with c5:
-        metric_card("러프니스", f'{result["loudness"]:.2f}', sub=interpret_loudness(result["loudness"]))
+        metric_card(METRIC_LABELS["loudness"], f'{result["loudness"]:.2f}', sub=interpret_loudness(result["loudness"]))
 
     st.markdown('<div class="section-label">감성 / 속성 지표</div>', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        metric_card("Acousticness", f'{result["acousticness"]:.2f}', sub=interpret_acousticness(result["acousticness"]))
+        metric_card(METRIC_LABELS["acousticness"], f'{result["acousticness"]:.2f}', sub=interpret_acousticness(result["acousticness"]))
     with c2:
-        metric_card("Energy", f'{result["energy"]:.2f}', sub=interpret_energy(result["energy"]), amber=True)
+        metric_card(METRIC_LABELS["energy"], f'{result["energy"]:.2f}', sub=interpret_energy(result["energy"]), amber=True)
     with c3:
-        metric_card("Instrumentalness", f'{result["instrumentalness"]:.2f}', sub=interpret_instrumentalness(result["instrumentalness"]))
+        metric_card(METRIC_LABELS["instrumentalness"], f'{result["instrumentalness"]:.2f}', sub=interpret_instrumentalness(result["instrumentalness"]))
     with c4:
-        metric_card("Valence", f'{result["valence"]:.2f}', sub=interpret_valence(result["valence"]), amber=True)
+        metric_card(METRIC_LABELS["valence"], f'{result["valence"]:.2f}', sub=interpret_valence(result["valence"]), amber=True)
 
     st.markdown('<div class="section-label">음색 (Timbre)</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
-        metric_card("스펙트럴 센트로이드", f'{result["spectral_centroid"]:.0f} Hz', sub=interpret_spectral_centroid(result["spectral_centroid"]))
+        metric_card(METRIC_LABELS["spectral_centroid"], f'{result["spectral_centroid"]:.0f} Hz', sub=interpret_spectral_centroid(result["spectral_centroid"]))
     with c2:
-        metric_card("제로크로싱레이트", f'{result["zcr"]:.4f}', sub=interpret_zcr(result["zcr"]))
+        metric_card(METRIC_LABELS["zcr"], f'{result["zcr"]:.4f}', sub=interpret_zcr(result["zcr"]))
 
     st.markdown('<div class="section-label">장르 예측 TOP 5</div>', unsafe_allow_html=True)
     for label, prob in result["top_genres"]:
@@ -472,8 +487,8 @@ def render_report(result):
 # ============================================================
 # 탭 구성
 # ============================================================
-tab1, tab3, tab4 = st.tabs([
-    "🎧 단일 곡 분석", "📖 해석 가이드", "📚 라이브러리 & 유사곡"
+tab1, tab4, tab3 = st.tabs([
+    "🎧 단일 곡 분석", "📚 라이브러리 & 유사곡", "📖 해석 가이드"
 ])
 
 with tab1:
@@ -638,10 +653,28 @@ with tab4:
     if not library:
         st.caption("아직 저장된 곡이 없어요. 단일 분석 탭에서 저장하거나 위에서 일괄 분석을 실행해보세요.")
     else:
-        table_df = pd.DataFrame(library)[
-            ["filename", "bpm", "danceability", "energy", "valence", "acousticness", "instrumentalness"]
-        ]
-        st.dataframe(table_df, use_container_width=True)
+        for entry in library:
+            with st.expander(f"🎵 {entry['filename']}"):
+                lc, rc = st.columns([3, 1])
+                with lc:
+                    st.markdown(f"""
+                    <table style="width:100%; font-family:'Space Mono',monospace; font-size:0.8rem;">
+                    <tr><td style="color:#6B7280;">{METRIC_LABELS['duration']}</td><td>{format_duration(entry['duration'])}</td></tr>
+                    <tr><td style="color:#6B7280;">{METRIC_LABELS['bpm']}</td><td>{entry['bpm']:.1f}</td></tr>
+                    <tr><td style="color:#6B7280;">{METRIC_LABELS['danceability']}</td><td>{entry['danceability']:.2f}</td></tr>
+                    <tr><td style="color:#6B7280;">{METRIC_LABELS['dynamic_complexity']}</td><td>{entry['dynamic_complexity']:.2f} dB</td></tr>
+                    <tr><td style="color:#6B7280;">{METRIC_LABELS['loudness']}</td><td>{entry['loudness']:.2f}</td></tr>
+                    <tr><td style="color:#6B7280;">{METRIC_LABELS['spectral_centroid']}</td><td>{entry['spectral_centroid']:.0f} Hz</td></tr>
+                    <tr><td style="color:#6B7280;">{METRIC_LABELS['zcr']}</td><td>{entry['zcr']:.4f}</td></tr>
+                    <tr><td style="color:#6B7280;">{METRIC_LABELS['acousticness']}</td><td>{entry['acousticness']:.2f}</td></tr>
+                    <tr><td style="color:#6B7280;">{METRIC_LABELS['energy']}</td><td>{entry['energy']:.2f}</td></tr>
+                    <tr><td style="color:#6B7280;">{METRIC_LABELS['instrumentalness']}</td><td>{entry['instrumentalness']:.2f}</td></tr>
+                    <tr><td style="color:#6B7280;">{METRIC_LABELS['valence']}</td><td>{entry['valence']:.2f}</td></tr>
+                    <tr><td style="color:#6B7280;">Top Genre(장르)</td><td>{entry['top_genres'][0][0]} ({entry['top_genres'][0][1]*100:.1f}%)</td></tr>
+                    </table>
+                    """, unsafe_allow_html=True)
+                with rc:
+                    st.pyplot(plot_radar(entry, figsize=(1.8, 1.8)), use_container_width=False)
 
         st.markdown('<div class="section-label">유사곡 추천</div>', unsafe_allow_html=True)
         selected_name = st.selectbox("기준 곡 선택", [s["filename"] for s in library])
@@ -658,11 +691,6 @@ with tab4:
                 st.markdown(f'<div class="genre-row"><span>{name}</span><span>{score*100:.1f}%</span></div>', unsafe_allow_html=True)
         else:
             st.caption("비교할 다른 곡이 아직 없어요.")
-
-        st.markdown('<div class="section-label">감성 프로필 (레이더)</div>', unsafe_allow_html=True)
-        rc1, rc2 = st.columns([1, 3])
-        with rc1:
-            st.pyplot(plot_radar(selected, title=selected_name), use_container_width=False)
 
         if st.button("🗑️ 라이브러리 전체 삭제"):
             if os.path.exists(LIBRARY_PATH):
