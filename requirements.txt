@@ -1,3 +1,5 @@
 streamlit
 essentia-tensorflow
 numpy
+pandas
+matplotlib
