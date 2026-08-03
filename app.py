@@ -188,6 +188,61 @@ def format_duration(seconds):
     return f"{minutes}분 {secs}초"
 
 
+def interpret_bpm(v):
+    if v <= 75: return "매우 느림 (발라드, 앰비언트)"
+    if v <= 95: return "느긋함 (미드템포 발라드, R&B)"
+    if v <= 115: return "보통 (팝, 미드템포 댄스)"
+    if v <= 130: return "업비트 (댄스, 하우스)"
+    return "빠름 (EDM, 트랩, 펑크)"
+
+def interpret_danceability(v):
+    if v < 0.5: return "리듬이 불규칙하거나 약함 (자유박, 앰비언트)"
+    if v < 1.0: return "리듬감 보통"
+    if v < 1.5: return "리듬이 뚜렷하고 규칙적 (댄스곡 다수 포함)"
+    return "매우 규칙적 · 반복적인 그루브 (EDM 등)"
+
+def interpret_loudness(v):
+    if v < 0.3: return "조용하게 믹싱됨"
+    if v < 0.6: return "보통 수준의 라우드니스"
+    return "강하게 마스터링됨 (라우드니스 워 성향)"
+
+def interpret_dynamic_complexity(v):
+    if v < 3: return "다이내믹이 좁음 (강하게 압축된 믹스)"
+    if v <= 6: return "일반적인 대중음악 수준"
+    return "다이내믹 폭이 넓음 (라이브, 클래식, 어쿠스틱 성향)"
+
+def interpret_spectral_centroid(v):
+    if v < 1000: return "어둡고 저음 중심 (베이스 강조, 따뜻한 톤)"
+    if v < 2000: return "중간 밝기 (보컬 중심 믹스에 흔함)"
+    if v < 3500: return "밝은 편 (신스, 하이햇 강조)"
+    return "매우 밝음/샤프함 (harsh하게 들릴 수 있음)"
+
+def interpret_zcr(v):
+    if v < 0.05: return "부드럽고 톤(음정)이 뚜렷한 소리 위주"
+    if v < 0.1: return "타악기/노이즈 요소가 어느 정도 섞임"
+    return "노이즈성·타격감이 강함 (퍼커시브, 디스토션)"
+
+def interpret_acousticness(v):
+    if v < 0.3: return "전자·신스 기반 사운드, 어쿠스틱 악기 비중 낮음"
+    if v < 0.6: return "전자 요소와 어쿠스틱 요소가 섞임"
+    return "어쿠스틱 악기(기타, 피아노, 현악 등) 중심 사운드"
+
+def interpret_energy(v):
+    if v < 0.3: return "차분하고 잔잔함 (발라드, 앰비언트)"
+    if v < 0.6: return "보통 수준의 에너지"
+    return "강렬하고 활동적 (댄스, 록, EDM)"
+
+def interpret_instrumentalness(v):
+    if v < 0.3: return "보컬이 뚜렷하게 존재"
+    if v < 0.6: return "보컬과 연주 비중이 비슷함"
+    return "보컬이 거의 없는 연주곡 성격"
+
+def interpret_valence(v):
+    if v < 0.3: return "어둡고 우울한 정서 (마이너 성향과 자주 연관)"
+    if v < 0.6: return "중립적인 정서"
+    return "밝고 긍정적인 정서 (메이저 성향과 자주 연관)"
+
+
 # ============================================================
 # 핵심 분석 함수
 # ============================================================
@@ -300,29 +355,34 @@ def render_report(result):
     with c1:
         metric_card("길이", format_duration(result["duration"]))
     with c2:
-        metric_card("BPM (보정됨)", f'{result["bpm"]:.1f}')
+        metric_card("BPM (보정됨)", f'{result["bpm"]:.1f}', sub=interpret_bpm(result["bpm"]))
     with c3:
-        metric_card("댄서빌리티", f'{result["danceability"]:.2f}', amber=True)
+        metric_card("댄서빌리티", f'{result["danceability"]:.2f}', sub=interpret_danceability(result["danceability"]), amber=True)
     with c4:
-        metric_card("다이내믹 범위", f'{result["dynamic_complexity"]:.2f} dB')
+        metric_card("다이내믹 범위", f'{result["dynamic_complexity"]:.2f} dB', sub=interpret_dynamic_complexity(result["dynamic_complexity"]))
+
+    st.markdown('<div class="section-label">다이내믹스 / 라우드니스</div>', unsafe_allow_html=True)
+    c1, = st.columns(1)
+    with c1:
+        metric_card("평균 러프니스", f'{result["loudness"]:.2f}', sub=interpret_loudness(result["loudness"]))
 
     st.markdown('<div class="section-label">감성 / 속성 지표</div>', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        metric_card("Acousticness", f'{result["acousticness"]:.2f}')
+        metric_card("Acousticness", f'{result["acousticness"]:.2f}', sub=interpret_acousticness(result["acousticness"]))
     with c2:
-        metric_card("Energy", f'{result["energy"]:.2f}', amber=True)
+        metric_card("Energy", f'{result["energy"]:.2f}', sub=interpret_energy(result["energy"]), amber=True)
     with c3:
-        metric_card("Instrumentalness", f'{result["instrumentalness"]:.2f}')
+        metric_card("Instrumentalness", f'{result["instrumentalness"]:.2f}', sub=interpret_instrumentalness(result["instrumentalness"]))
     with c4:
-        metric_card("Valence", f'{result["valence"]:.2f}', amber=True)
+        metric_card("Valence", f'{result["valence"]:.2f}', sub=interpret_valence(result["valence"]), amber=True)
 
     st.markdown('<div class="section-label">음색 (Timbre)</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
-        metric_card("스펙트럴 센트로이드 (밝기)", f'{result["spectral_centroid"]:.0f} Hz')
+        metric_card("스펙트럴 센트로이드 (밝기)", f'{result["spectral_centroid"]:.0f} Hz', sub=interpret_spectral_centroid(result["spectral_centroid"]))
     with c2:
-        metric_card("제로크로싱레이트 (타격감)", f'{result["zcr"]:.4f}')
+        metric_card("제로크로싱레이트 (타격감)", f'{result["zcr"]:.4f}', sub=interpret_zcr(result["zcr"]))
 
     st.markdown('<div class="section-label">장르 예측 TOP 5</div>', unsafe_allow_html=True)
     for label, prob in result["top_genres"]:
