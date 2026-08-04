@@ -291,10 +291,84 @@ METRIC_LABELS = {
 # ============================================================
 # 핵심 분석 함수
 # ============================================================
+@st.cache_resource(show_spinner=False)
+def get_embedding_model():
+    import essentia.standard as es
+    return es.TensorflowPredictEffnetDiscogs(
+        graphFilename=mpath("discogs-effnet-bs64-1.pb"), output="PartitionedCall:1"
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def get_genre_model():
+    import essentia.standard as es
+    return es.TensorflowPredict2D(
+        graphFilename=mpath("genre_discogs400-discogs-effnet-1.pb"),
+        input="serving_default_model_Placeholder", output="PartitionedCall:0"
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def get_acoustic_model():
+    import essentia.standard as es
+    return es.TensorflowPredict2D(
+        graphFilename=mpath("mood_acoustic-discogs-effnet-1.pb"),
+        input="model/Placeholder", output="model/Softmax"
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def get_voice_model():
+    import essentia.standard as es
+    return es.TensorflowPredict2D(
+        graphFilename=mpath("voice_instrumental-discogs-effnet-1.pb"),
+        input="model/Placeholder", output="model/Softmax"
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def get_musicnn_embedding_model():
+    from essentia.standard import TensorflowPredictMusiCNN
+    return TensorflowPredictMusiCNN(
+        graphFilename=mpath("msd-musicnn-1.pb"), output="model/dense/BiasAdd"
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def get_emomusic_model():
+    import essentia.standard as es
+    return es.TensorflowPredict2D(
+        graphFilename=mpath("emomusic-msd-musicnn-2.pb"), output="model/Identity"
+    )
+
+
+@st.cache_data(show_spinner=False)
+def get_genre_labels():
+    with open(mpath("genre_discogs400-discogs-effnet-1.json")) as f:
+        return json.load(f)['classes']
+
+
+@st.cache_data(show_spinner=False)
+def get_acoustic_labels():
+    with open(mpath("mood_acoustic-discogs-effnet-1.json")) as f:
+        return json.load(f)['classes']
+
+
+@st.cache_data(show_spinner=False)
+def get_voice_labels():
+    with open(mpath("voice_instrumental-discogs-effnet-1.json")) as f:
+        return json.load(f)['classes']
+
+
+@st.cache_data(show_spinner=False)
+def get_emomusic_labels():
+    with open(mpath("emomusic-msd-musicnn-2.json")) as f:
+        return [c.lower() for c in json.load(f)['classes']]
+
+
 @st.cache_data(show_spinner="음원 분석 중...")
 def analyze_audio(file_bytes, filename):
     import essentia.standard as es
-    from essentia.standard import TensorflowPredictMusiCNN
 
     tmp_path = f"/tmp/{filename}"
     with open(tmp_path, "wb") as f:
@@ -309,51 +383,26 @@ def analyze_audio(file_bytes, filename):
 
     audio_16k = es.MonoLoader(filename=tmp_path, sampleRate=16000, resampleQuality=4)()
 
-    embedding_model = es.TensorflowPredictEffnetDiscogs(
-        graphFilename=mpath("discogs-effnet-bs64-1.pb"), output="PartitionedCall:1"
-    )
-    embeddings = embedding_model(audio_16k)
+    embeddings = get_embedding_model()(audio_16k)
 
     # 장르
-    genre_model = es.TensorflowPredict2D(
-        graphFilename=mpath("genre_discogs400-discogs-effnet-1.pb"),
-        input="serving_default_model_Placeholder", output="PartitionedCall:0"
-    )
-    genre_pred = np.mean(genre_model(embeddings), axis=0)
-    with open(mpath("genre_discogs400-discogs-effnet-1.json")) as f:
-        genre_labels = json.load(f)['classes']
+    genre_pred = np.mean(get_genre_model()(embeddings), axis=0)
+    genre_labels = get_genre_labels()
 
     # acousticness
-    acoustic_model = es.TensorflowPredict2D(
-        graphFilename=mpath("mood_acoustic-discogs-effnet-1.pb"),
-        input="model/Placeholder", output="model/Softmax"
-    )
-    acoustic_pred = np.mean(acoustic_model(embeddings), axis=0)
-    with open(mpath("mood_acoustic-discogs-effnet-1.json")) as f:
-        acoustic_labels = json.load(f)['classes']
+    acoustic_pred = np.mean(get_acoustic_model()(embeddings), axis=0)
+    acoustic_labels = get_acoustic_labels()
     acousticness = float(acoustic_pred[acoustic_labels.index("acoustic")])
 
     # instrumentalness
-    voice_model = es.TensorflowPredict2D(
-        graphFilename=mpath("voice_instrumental-discogs-effnet-1.pb"),
-        input="model/Placeholder", output="model/Softmax"
-    )
-    voice_pred = np.mean(voice_model(embeddings), axis=0)
-    with open(mpath("voice_instrumental-discogs-effnet-1.json")) as f:
-        voice_labels = json.load(f)['classes']
+    voice_pred = np.mean(get_voice_model()(embeddings), axis=0)
+    voice_labels = get_voice_labels()
     instrumentalness = float(voice_pred[voice_labels.index("instrumental")])
 
     # valence / energy (musicnn 임베딩 별도 사용)
-    musicnn_embedding_model = TensorflowPredictMusiCNN(
-        graphFilename=mpath("msd-musicnn-1.pb"), output="model/dense/BiasAdd"
-    )
-    musicnn_embeddings = musicnn_embedding_model(audio_16k)
-    emomusic_model = es.TensorflowPredict2D(
-        graphFilename=mpath("emomusic-msd-musicnn-2.pb"), output="model/Identity"
-    )
-    emomusic_pred = np.mean(emomusic_model(musicnn_embeddings), axis=0)
-    with open(mpath("emomusic-msd-musicnn-2.json")) as f:
-        emomusic_labels = [c.lower() for c in json.load(f)['classes']]
+    musicnn_embeddings = get_musicnn_embedding_model()(audio_16k)
+    emomusic_pred = np.mean(get_emomusic_model()(musicnn_embeddings), axis=0)
+    emomusic_labels = get_emomusic_labels()
     valence = float((emomusic_pred[emomusic_labels.index("valence")] - 1) / 8)
     energy = float((emomusic_pred[emomusic_labels.index("arousal")] - 1) / 8)
 
