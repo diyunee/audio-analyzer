@@ -413,11 +413,11 @@ def save_to_library(entry):
 # ============================================================
 def plot_radar(result, title="", figsize=(2.8, 2.8)):
     labels = [
-        METRIC_LABELS["acousticness"],
-        METRIC_LABELS["energy"],
-        METRIC_LABELS["danceability"],
-        METRIC_LABELS["valence"],
-        METRIC_LABELS["dynamic_complexity"],
+        METRIC_LABELS["acousticness"].split("(")[0],
+        METRIC_LABELS["energy"].split("(")[0],
+        METRIC_LABELS["danceability"].split("(")[0],
+        METRIC_LABELS["valence"].split("(")[0],
+        METRIC_LABELS["dynamic_complexity"].split("(")[0],
     ]
     values = [
         result["acousticness"],
