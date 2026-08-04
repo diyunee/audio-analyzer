@@ -708,27 +708,18 @@ with tab4:
                 else:
                     st.caption("⚠️ 재생 파일 없음 (재배포로 초기화됐을 수 있어요)")
 
-                lc, rc = st.columns([3, 1])
-                with lc:
-                    st.markdown(f"""
-                    <table style="width:100%; table-layout:fixed; font-family:'Space Mono',monospace; font-size:0.8rem;">
-                    <colgroup><col style="width:55%"><col style="width:45%"></colgroup>
-                    <tr><td style="color:#6B7280;">{METRIC_LABELS['duration']}</td><td>{format_duration(entry['duration'])}</td></tr>
-                    <tr><td style="color:#6B7280;">{METRIC_LABELS['bpm']}</td><td>{entry['bpm']:.1f}</td></tr>
-                    <tr><td style="color:#6B7280;">{METRIC_LABELS['danceability']}</td><td>{entry['danceability']:.2f}</td></tr>
-                    <tr><td style="color:#6B7280;">{METRIC_LABELS['dynamic_complexity']}</td><td>{entry['dynamic_complexity']:.2f} dB</td></tr>
-                    <tr><td style="color:#6B7280;">{METRIC_LABELS['loudness']}</td><td>{entry['loudness']:.2f}</td></tr>
-                    <tr><td style="color:#6B7280;">{METRIC_LABELS['spectral_centroid']}</td><td>{entry['spectral_centroid']:.0f} Hz</td></tr>
-                    <tr><td style="color:#6B7280;">{METRIC_LABELS['zcr']}</td><td>{entry['zcr']:.4f}</td></tr>
-                    <tr><td style="color:#6B7280;">{METRIC_LABELS['acousticness']}</td><td>{entry['acousticness']:.2f}</td></tr>
-                    <tr><td style="color:#6B7280;">{METRIC_LABELS['energy']}</td><td>{entry['energy']:.2f}</td></tr>
-                    <tr><td style="color:#6B7280;">{METRIC_LABELS['instrumentalness']}</td><td>{entry['instrumentalness']:.2f}</td></tr>
-                    <tr><td style="color:#6B7280;">{METRIC_LABELS['valence']}</td><td>{entry['valence']:.2f}</td></tr>
-                    <tr><td style="color:#6B7280;">Top Genre(장르)</td><td>{entry['top_genres'][0][0]} ({entry['top_genres'][0][1]*100:.1f}%)</td></tr>
-                    </table>
-                    """, unsafe_allow_html=True)
-                with rc:
-                    st.pyplot(plot_radar(entry, figsize=(1.8, 1.8)), use_container_width=False)
+                render_report(entry)
+
+                c1, c2 = st.columns([2, 1])
+                with c1:
+                    if audio_path:
+                        import essentia.standard as es
+                        audio_16k_lib = es.MonoLoader(filename=audio_path, sampleRate=16000, resampleQuality=4)()
+                        st.markdown('<div class="section-label">파형</div>', unsafe_allow_html=True)
+                        st.pyplot(plot_waveform(audio_16k_lib), use_container_width=False)
+                with c2:
+                    st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
+                    st.pyplot(plot_radar(entry, title=entry["filename"]), use_container_width=False)
 
         st.markdown('<div class="section-label">유사곡 추천</div>', unsafe_allow_html=True)
         selected_name = st.selectbox("기준 곡 선택", [s["filename"] for s in library])
