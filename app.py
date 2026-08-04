@@ -106,7 +106,7 @@ section[data-testid="stFileUploader"] {
 .guide-content { font-size: 0.82rem; line-height: 1.55; color: #374151; }
 .guide-content h2 {
     font-family: 'Space Mono', monospace;
-    font-size: 1.0rem; color: #B96E1C;
+    font-size: 1.0rem; color: #1A1D24;
     margin: 22px 0 8px 0; border-bottom: 1px solid #E5E7EB; padding-bottom: 4px;
 }
 .guide-content h3 {
@@ -114,10 +114,11 @@ section[data-testid="stFileUploader"] {
     font-size: 0.85rem; color: #1F8F7B; margin: 12px 0 4px 0;
 }
 .guide-content p { font-size: 0.78rem; color: #6B7280; margin: 2px 0 8px 0; }
-.guide-content table { width: 100%; border-collapse: collapse; font-size: 0.76rem; margin-bottom: 10px; }
+.guide-content table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 0.76rem; margin-bottom: 10px; }
 .guide-content th, .guide-content td {
     border-bottom: 1px dashed #E5E7EB; padding: 4px 8px; text-align: left;
 }
+.guide-content th:first-child, .guide-content td:first-child { width: 32%; }
 .guide-content th { color: #6B7280; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
@@ -540,7 +541,7 @@ with tab3:
     <h2>1. 리듬 / 템포</h2>
 
     <h3>BPM(템포)</h3>
-    <p>장르 예측 Top5와 각 장르별 전형적인 템포 중심값을 대조해서, 원본/절반/두배 BPM 중 가장 그럴듯한 값을 자동 채택합니다.</p>
+    <p>장르 예측 Top5와 각 장르별 전형적인 템포 중심값을 대조해서 원본/절반/두배 BPM 중 가장 그럴듯한 값을 자동으로 채택하는 방식입니다.</p>
     <table>
     <tr><th>범위</th><th>느낌</th></tr>
     <tr><td>~75 이하</td><td>매우 느림 (발라드, 앰비언트)</td></tr>
@@ -551,7 +552,7 @@ with tab3:
     </table>
 
     <h3>Danceability(댄서빌리티)</h3>
-    <p>DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표. 1을 넘을 수 있는 상대값입니다.</p>
+    <p>DFA(detrended fluctuation analysis) 기반 리듬 규칙성 지표이며, 1을 넘을 수 있는 상대값입니다.</p>
     <table>
     <tr><th>범위</th><th>의미</th></tr>
     <tr><td>0 ~ 0.5</td><td>리듬이 불규칙하거나 약함 (자유박, 앰비언트)</td></tr>
@@ -563,7 +564,7 @@ with tab3:
     <h2>2. 다이내믹스 / 라우드니스</h2>
 
     <h3>Loudness(러프니스)</h3>
-    <p>0~1 정규화 값</p>
+    <p>0~1 사이로 정규화한 값입니다.</p>
     <table>
     <tr><th>범위</th><th>의미</th></tr>
     <tr><td>0.3 미만</td><td>조용하게 믹싱됨</td></tr>
@@ -572,7 +573,7 @@ with tab3:
     </table>
 
     <h3>Dynamic Complexity(다이내믹)</h3>
-    <p>dB 단위</p>
+    <p>dB 단위로 측정한 값입니다.</p>
     <table>
     <tr><th>범위</th><th>의미</th></tr>
     <tr><td>3 미만</td><td>다이내믹이 좁음 (강하게 압축된 믹스)</td></tr>
@@ -583,7 +584,7 @@ with tab3:
     <h2>3. 음색 (Timbre)</h2>
 
     <h3>Spectral Centroid(음색밝기)</h3>
-    <p>소리의 "밝기"를 나타내는 무게중심 주파수 (Hz)</p>
+    <p>소리의 "밝기"를 나타내는 무게중심 주파수(Hz)입니다.</p>
     <table>
     <tr><th>범위</th><th>의미</th></tr>
     <tr><td>1000 Hz 미만</td><td>어둡고 저음 중심 (베이스 강조, 따뜻한 톤)</td></tr>
@@ -593,6 +594,7 @@ with tab3:
     </table>
 
     <h3>Zero Crossing Rate(타격감)</h3>
+    <p>신호가 0을 지나는 빈도를 나타내는 값입니다.</p>
     <table>
     <tr><th>범위</th><th>의미</th></tr>
     <tr><td>0.05 미만</td><td>부드럽고 톤(음정)이 뚜렷한 소리 위주</td></tr>
@@ -603,7 +605,7 @@ with tab3:
     <h2>4. 감성 / 속성 지표 (0~1 정규화)</h2>
 
     <h3>Acousticness(어쿠스틱함)</h3>
-    <p>mood_acoustic 모델, "acoustic" 클래스 확률</p>
+    <p>mood_acoustic 모델이 예측한 "acoustic" 클래스 확률입니다.</p>
     <table>
     <tr><th>범위</th><th>의미</th></tr>
     <tr><td>0.3 미만</td><td>전자·신스 기반 사운드, 어쿠스틱 악기 비중 낮음</td></tr>
@@ -612,7 +614,7 @@ with tab3:
     </table>
 
     <h3>Energy(에너지)</h3>
-    <p>emomusic 모델의 arousal 값 정규화, 각성도·강렬함</p>
+    <p>emomusic 모델의 arousal 값을 정규화한 각성도·강렬함 지표입니다.</p>
     <table>
     <tr><th>범위</th><th>의미</th></tr>
     <tr><td>0.3 미만</td><td>차분하고 잔잔함 (발라드, 앰비언트)</td></tr>
@@ -621,7 +623,7 @@ with tab3:
     </table>
 
     <h3>Instrumentalness(보컬없음)</h3>
-    <p>voice_instrumental 모델, "instrumental" 클래스 확률</p>
+    <p>voice_instrumental 모델이 예측한 "instrumental" 클래스 확률입니다.</p>
     <table>
     <tr><th>범위</th><th>의미</th></tr>
     <tr><td>0.3 미만</td><td>보컬이 뚜렷하게 존재</td></tr>
@@ -630,7 +632,7 @@ with tab3:
     </table>
 
     <h3>Valence(긍정정서)</h3>
-    <p>emomusic 모델의 valence 값 정규화, 정서적 긍정성</p>
+    <p>emomusic 모델의 valence 값을 정규화한 정서적 긍정성 지표입니다.</p>
     <table>
     <tr><th>범위</th><th>의미</th></tr>
     <tr><td>0.3 미만</td><td>어둡고 우울한 정서 (마이너 성향과 자주 연관)</td></tr>
