@@ -736,16 +736,20 @@ with tab4:
     else:
         for entry in library:
             with st.expander(f"🎵 {entry['filename']}"):
-                audio_path = get_audio_path(entry["filename"])
-                if audio_path:
-                    st.audio(audio_path)
-                else:
-                    st.caption("⚠️ 재생 파일 없음 (재배포로 초기화됐을 수 있어요)")
+                left_col, right_col = st.columns([4, 1])
 
-                render_report(entry)
+                with left_col:
+                    audio_path = get_audio_path(entry["filename"])
+                    if audio_path:
+                        st.audio(audio_path)
+                    else:
+                        st.caption("⚠️ 재생 파일 없음 (재배포로 초기화됐을 수 있어요)")
 
-                st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
-                st.pyplot(plot_radar(entry, title=entry["filename"]), use_container_width=False)
+                    render_report(entry)
+
+                with right_col:
+                    st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
+                    st.pyplot(plot_radar(entry, figsize=(2.0, 2.0)), use_container_width=True)
 
         st.markdown('<div class="section-label">유사곡 추천</div>', unsafe_allow_html=True)
         selected_name = st.selectbox("기준 곡 선택", [s["filename"] for s in library])
