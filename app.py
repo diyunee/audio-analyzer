@@ -26,6 +26,10 @@ html, body, [class*="css"]  { font-family: 'Manrope', sans-serif; }
     color: #1A1D24;
 }
 
+.main .block-container { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+div[data-testid="stVerticalBlock"] { gap: 0.3rem; }
+div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
+
 .hero-title {
     font-family: 'Space Mono', monospace;
     font-size: 2.3rem;
@@ -51,36 +55,36 @@ html, body, [class*="css"]  { font-family: 'Manrope', sans-serif; }
 .metric-card {
     background: #F7F8FA;
     border: 1px solid #E5E7EB;
-    border-radius: 10px;
-    padding: 8px 12px;
-    margin-bottom: 8px;
+    border-radius: 8px;
+    padding: 6px 10px;
+    margin-bottom: 4px;
 }
 .metric-label {
-    font-size: 0.65rem;
+    font-size: 0.62rem;
     color: #6B7280;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 3px;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
 }
 .metric-value {
     font-family: 'Space Mono', monospace;
-    font-size: 1.05rem;
+    font-size: 0.98rem;
     color: #1F8F7B;
     font-weight: 700;
-    line-height: 1.2;
+    line-height: 1.15;
 }
 .metric-value.amber { color: #B96E1C; }
-.metric-sub { color: #8A93A3; font-size: 0.65rem; margin-top: 2px; line-height: 1.2; }
+.metric-sub { color: #8A93A3; font-size: 0.62rem; margin-top: 1px; line-height: 1.15; }
 
 .section-label {
     font-family: 'Space Mono', monospace;
     color: #B96E1C;
-    font-size: 0.85rem;
-    letter-spacing: 0.08em;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    margin: 26px 0 10px 0;
+    margin: 12px 0 4px 0;
     border-bottom: 1px solid #E5E7EB;
-    padding-bottom: 6px;
+    padding-bottom: 3px;
 }
 
 .genre-row {
@@ -372,7 +376,6 @@ def analyze_audio(file_bytes, filename):
         "valence": valence,
         "top_genres": top_genres,
         "embedding_vector": np.mean(embeddings, axis=0).tolist(),
-        "audio_16k": audio_16k,  # 파형/스펙트로그램용 (라이브러리에는 저장 안 함)
     }
 
 
@@ -460,19 +463,6 @@ def plot_radar(result, title="", figsize=(2.8, 2.8)):
     return fig
 
 
-def plot_waveform(audio_array, sr=16000):
-    fig, ax = plt.subplots(figsize=(6, 1.4))
-    fig.patch.set_facecolor("white")
-    t = np.linspace(0, len(audio_array) / sr, len(audio_array))
-    ax.plot(t, audio_array, color="#1F8F7B", linewidth=0.3)
-    ax.set_facecolor("#F7F8FA")
-    ax.set_xlabel("Time (s)", fontsize=7)
-    ax.set_yticks([])
-    ax.tick_params(labelsize=7)
-    plt.tight_layout()
-    return fig
-
-
 def metric_card(label, value, sub="", amber=False):
     cls = "metric-value amber" if amber else "metric-value"
     st.markdown(f"""
@@ -538,13 +528,8 @@ with tab1:
         result = analyze_audio(uploaded.getvalue(), uploaded.name)
         render_report(result)
 
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            st.markdown('<div class="section-label">파형</div>', unsafe_allow_html=True)
-            st.pyplot(plot_waveform(result["audio_16k"]), use_container_width=False)
-        with c2:
-            st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
-            st.pyplot(plot_radar(result, title=uploaded.name), use_container_width=False)
+        st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
+        st.pyplot(plot_radar(result, title=uploaded.name), use_container_width=False)
 
         if st.button("📚 라이브러리에 저장", key="save_single"):
             save_to_library(make_library_entry(result, uploaded.name))
@@ -710,16 +695,8 @@ with tab4:
 
                 render_report(entry)
 
-                c1, c2 = st.columns([2, 1])
-                with c1:
-                    if audio_path:
-                        import essentia.standard as es
-                        audio_16k_lib = es.MonoLoader(filename=audio_path, sampleRate=16000, resampleQuality=4)()
-                        st.markdown('<div class="section-label">파형</div>', unsafe_allow_html=True)
-                        st.pyplot(plot_waveform(audio_16k_lib), use_container_width=False)
-                with c2:
-                    st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
-                    st.pyplot(plot_radar(entry, title=entry["filename"]), use_container_width=False)
+                st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
+                st.pyplot(plot_radar(entry, title=entry["filename"]), use_container_width=False)
 
         st.markdown('<div class="section-label">유사곡 추천</div>', unsafe_allow_html=True)
         selected_name = st.selectbox("기준 곡 선택", [s["filename"] for s in library])
