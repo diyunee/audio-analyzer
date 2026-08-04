@@ -156,6 +156,7 @@ MODEL_URLS = {
 }
 MODEL_DIR = "models"
 LIBRARY_PATH = "library_data.json"
+AUDIO_DIR = "audio_files"
 
 
 @st.cache_resource(show_spinner="분석 모델 준비 중 (최초 1회, 1~2분 소요)...")
@@ -389,6 +390,19 @@ def make_library_entry(result, filename):
     return entry
 
 
+def save_audio_file(file_bytes, filename):
+    os.makedirs(AUDIO_DIR, exist_ok=True)
+    path = os.path.join(AUDIO_DIR, filename)
+    with open(path, "wb") as f:
+        f.write(file_bytes)
+    return path
+
+
+def get_audio_path(filename):
+    path = os.path.join(AUDIO_DIR, filename)
+    return path if os.path.exists(path) else None
+
+
 def load_library():
     if os.path.exists(LIBRARY_PATH):
         try:
@@ -518,6 +532,8 @@ tab1, tab4, tab3 = st.tabs([
 with tab1:
     uploaded = st.file_uploader("음원 파일 업로드 (mp3, wav)", type=["mp3", "wav"], key="single")
     if uploaded:
+        st.audio(uploaded.getvalue())
+
         ensure_models()
         result = analyze_audio(uploaded.getvalue(), uploaded.name)
         render_report(result)
@@ -532,6 +548,7 @@ with tab1:
 
         if st.button("📚 라이브러리에 저장", key="save_single"):
             save_to_library(make_library_entry(result, uploaded.name))
+            save_audio_file(uploaded.getvalue(), uploaded.name)
             st.success(f"'{uploaded.name}'을(를) 라이브러리에 저장했어요.")
 
 with tab3:
@@ -656,6 +673,7 @@ with tab4:
             r = analyze_audio(f.getvalue(), f.name)
             entry = make_library_entry(r, f.name)
             save_to_library(entry)
+            save_audio_file(f.getvalue(), f.name)
             batch_results.append(entry)
             progress.progress((i + 1) / len(batch_files))
         st.success(f"{len(batch_files)}곡 분석 및 라이브러리 저장 완료!")
@@ -684,6 +702,12 @@ with tab4:
     else:
         for entry in library:
             with st.expander(f"🎵 {entry['filename']}"):
+                audio_path = get_audio_path(entry["filename"])
+                if audio_path:
+                    st.audio(audio_path)
+                else:
+                    st.caption("⚠️ 재생 파일 없음 (재배포로 초기화됐을 수 있어요)")
+
                 lc, rc = st.columns([3, 1])
                 with lc:
                     st.markdown(f"""
