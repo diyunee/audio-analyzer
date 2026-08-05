@@ -242,42 +242,54 @@ GENRE_BPM_CENTER = {
 }
 
 
-def _danceability_bpm_prior(danceability):
-    """댄서빌리티(리듬 규칙성) 값을 바탕으로 그럴듯한 BPM 중심값을 추정.
-    리듬이 규칙적일수록 90~140 BPM대를, 불규칙할수록 저속 대역을 선호."""
+def _danceability_bpm_range(danceability):
+    """댄서빌리티(리듬 규칙성) 값이 그럴듯하게 나올 수 있는 BPM 대역을 추정.
+    리듬이 규칙적일수록(값이 높을수록) 빠른 BPM대를, 불규칙할수록 느린 BPM대를 선호."""
     if danceability < 0.5:
-        return 65
+        return (40, 95)
     elif danceability < 1.0:
-        return 92
-    elif danceability < 1.5:
-        return 118
+        return (70, 115)
+    elif danceability < 1.3:
+        return (90, 130)
     else:
-        return 136
+        return (100, 190)
 
 
 def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, danceability=1.0, top_n=5):
+    """원본/절반/두배 BPM 후보 중 하나를 고르는 옥타브 보정.
+    댄서빌리티가 명확한 BPM 대역을 가리킬 때는 그 대역을 최우선(veto)으로 따르고,
+    대역 안에 후보가 여럿이거나 하나도 없을 때만 장르 유사도로 보조 판단한다.
+    (과거 버전은 장르 점수를 제한 없이 누적해서, danceability가 명백히 높아도
+    장르 매칭 개수에 따라 절반 BPM을 잘못 고르는 경우가 있었음)"""
     top_idx = np.argsort(avg_predictions)[::-1][:top_n]
     top_genres = [(labels[i], avg_predictions[i]) for i in top_idx]
-    half_bpm, double_bpm = bpm_candidate / 2, bpm_candidate * 2
-    dance_center = _danceability_bpm_prior(danceability)
+    candidates = {"원본": bpm_candidate, "절반": bpm_candidate / 2, "두배": bpm_candidate * 2}
 
-    def score(bpm_value):
-        s = 0.0
+    def genre_score(bpm_value):
+        """매칭된 장르들의 (거리 기반 유사도 x 확률) 평균. 매칭이 없으면 0."""
+        matched = []
         for genre_label, prob in top_genres:
             for keyword, center in GENRE_BPM_CENTER.items():
                 if keyword.lower() in genre_label.lower():
                     distance = abs(bpm_value - center)
-                    s += np.exp(-(distance ** 2) / (2 * 25 ** 2)) * prob
-        # 댄서빌리티 기반 prior (가중치 0.5) — 장르 매칭이 약할 때 특히 중요한 보정 근거가 됨
-        dist_dance = abs(bpm_value - dance_center)
-        s += 0.5 * np.exp(-(dist_dance ** 2) / (2 * 30 ** 2))
-        return s
+                    matched.append(np.exp(-(distance ** 2) / (2 * 25 ** 2)) * prob)
+        return float(np.mean(matched)) if matched else 0.0
 
-    scores = {"원본": (bpm_candidate, score(bpm_candidate)),
-              "절반": (half_bpm, score(half_bpm)),
-              "두배": (double_bpm, score(double_bpm))}
-    best = max(scores, key=lambda k: scores[k][1])
-    return scores[best][0]
+    lo, hi = _danceability_bpm_range(danceability)
+    in_range = {k: v for k, v in candidates.items() if lo <= v <= hi}
+
+    if len(in_range) == 1:
+        # 댄서빌리티 대역에 유일하게 맞는 후보 → 그대로 채택 (장르 점수와 무관하게 우선)
+        return list(in_range.values())[0]
+    elif len(in_range) > 1:
+        # 대역 안에 여러 후보가 있으면 장르 유사도로 그중 하나를 고름
+        best_key = max(in_range, key=lambda k: genre_score(in_range[k]))
+        return in_range[best_key]
+    else:
+        # 어떤 후보도 댄서빌리티 대역에 들지 않으면 대역 중심에 가장 가까운 후보를 채택
+        range_center = (lo + hi) / 2
+        best_key = min(candidates, key=lambda k: abs(candidates[k] - range_center))
+        return candidates[best_key]
 
 
 def format_duration(seconds):
@@ -359,38 +371,56 @@ METRIC_LABELS = {
 # ============================================================
 # 무드 자동 생성 (Essentia feature 기반 규칙 분류)
 # ============================================================
-# valence(정서 긍정성) x energy(각성도) 2축의 정서 원형모델(circumplex model)을
-# 3x3 그리드로 나눠 기본 무드를 정하고, acousticness/danceability로 세부 태그를 덧붙임
-MOOD_GRID = {
-    (0, 0): ("쓸쓸한 무드", "차분하면서도 어두운 정서가 느껴져요"),
-    (0, 1): ("멜랑콜리한 무드", "잔잔하지만 씁쓸한 여운이 있어요"),
-    (0, 2): ("긴장감 있는 무드", "어둡고 강렬한 에너지가 느껴져요"),
-    (1, 0): ("나른한 무드", "느슨하고 여유로운 분위기예요"),
-    (1, 1): ("담담한 무드", "특별히 튀지 않는 중립적인 감정이에요"),
-    (1, 2): ("역동적인 무드", "활발하지만 감정선이 또렷하진 않아요"),
-    (2, 0): ("따뜻한 무드", "포근하고 편안한 긍정의 느낌이에요"),
-    (2, 1): ("경쾌한 무드", "밝고 산뜻한 분위기예요"),
-    (2, 2): ("신나는 무드", "밝고 에너지 넘치는 무드예요"),
-}
+# valence(정서 긍정성) x energy(각성도)를 정서 원형모델(Russell's circumplex model)의
+# 2차원 평면(-1~1)에 놓고, 8방향(45도 간격) + 중심(무자극) 총 9개 기본 무드 중
+# 가장 가까운 방향을 고른 뒤, 원점으로부터의 거리(감정 강도)로 3단계 강도를 매기고,
+# acousticness/danceability/instrumentalness로 세부 태그를 덧붙여 조합 수를 늘린다.
+MOOD_ANCHORS = [
+    # (각도, 기본 단어, 설명)
+    (0,   "따뜻한",     "포근하고 안정적인 긍정의 정서예요"),
+    (45,  "신나는",     "밝고 들뜬 에너지가 느껴져요"),
+    (90,  "긴장감 있는", "각성되고 팽팽한 긴장감이 느껴져요"),
+    (135, "격앙된",     "날카롭고 격한 감정이 묻어나요"),
+    (180, "우울한",     "무겁고 가라앉은 정서예요"),
+    (225, "쓸쓸한",     "지치고 쓸쓸한 여운이 남아요"),
+    (270, "나른한",     "노곤하고 느슨한 분위기예요"),
+    (315, "평온한",     "차분하고 편안한 안정감이 느껴져요"),
+]
+MOOD_CENTER = ("담백한", "특별히 튀지 않는 담담한 정서예요")
 
 
-def _tri_level(x, lo=0.35, hi=0.65):
-    if x < lo:
-        return 0
-    if x > hi:
-        return 2
-    return 1
+def _angle_diff(a, b):
+    d = abs(a - b) % 360
+    return min(d, 360 - d)
 
 
 def determine_mood(result):
-    """valence/energy로 기본 무드를 정하고, acousticness/danceability로 태그를 덧붙임."""
-    vl = _tri_level(result["valence"])
-    el = _tri_level(result["energy"])
-    label, desc = MOOD_GRID[(vl, el)]
+    """valence/energy 좌표로 기본 무드(방향)와 강도(거리)를 정하고,
+    acousticness/danceability/instrumentalness로 세부 태그를 덧붙인다."""
+    vx = 2 * result["valence"] - 1   # -1(부정) ~ 1(긍정)
+    ey = 2 * result["energy"] - 1    # -1(저각성) ~ 1(고각성)
+    radius = float(np.hypot(vx, ey))  # 원점(무자극/중립)으로부터의 거리, 0~약1.41
+
+    if radius < 0.15:
+        mood_label = f"{MOOD_CENTER[0]} 무드"
+        base_desc = MOOD_CENTER[1]
+    else:
+        angle = float(np.degrees(np.arctan2(ey, vx)) % 360)
+        anchor = min(MOOD_ANCHORS, key=lambda a: _angle_diff(a[0], angle))
+        base_word, base_desc = anchor[1], anchor[2]
+
+        if radius >= 0.62:
+            intensity = "짙은 "
+        elif radius >= 0.35:
+            intensity = ""
+        else:
+            intensity = "은은한 "
+        mood_label = f"{intensity}{base_word} 무드"
 
     tags = []
     ac = result.get("acousticness", 0.5)
     dance = result.get("danceability", 1.0)
+    instr = result.get("instrumentalness", 0.3)
     if ac >= 0.6:
         tags.append("어쿠스틱")
     elif ac < 0.3:
@@ -399,10 +429,12 @@ def determine_mood(result):
         tags.append("댄서블")
     elif dance < 0.5:
         tags.append("자유로운 박자")
+    if instr >= 0.6:
+        tags.append("연주곡 성격")
 
     if tags:
-        label = f'{label} · {" · ".join(tags)}'
-    return label, desc
+        mood_label = f'{mood_label} · {" · ".join(tags)}'
+    return mood_label, base_desc
 
 
 # ============================================================
@@ -1080,9 +1112,11 @@ with tab3:
     <h2>1. 리듬 / 템포</h2>
 
     <h3>BPM(템포)</h3>
-    <p>장르 예측 Top5와 각 장르별 전형적인 템포 중심값, 그리고 댄서빌리티(리듬 규칙성)로 추정한 템포 대역을 함께 대조해서
-    원본/절반/두배 BPM 중 가장 그럴듯한 값을 자동으로 채택하는 방식입니다. 장르 매칭이 애매한 곡도 댄서빌리티 정보로
-    옥타브 오류(정박의 절반/두배로 잘못 인식되는 문제)를 추가로 보정합니다.</p>
+    <p>댄서빌리티(리듬 규칙성) 값으로 먼저 그럴듯한 BPM 대역을 정하고, 원본/절반/두배 BPM 후보 중 그 대역에 드는
+    값을 우선 채택합니다. 대역 안에 후보가 여러 개면 그때 장르 예측 Top5와 장르별 전형적인 템포를 비교해 더 어울리는
+    쪽을 고르고, 대역에 맞는 후보가 하나도 없으면 대역 중심에 가장 가까운 값을 씁니다. 댄서빌리티가 높을수록(리듬이
+    뚜렷할수록) 빠른 BPM대를, 낮을수록 느린 BPM대를 우선하기 때문에 옥타브 오류(정박의 절반/두배로 잘못 인식되는 문제)를
+    안정적으로 보정합니다.</p>
     <table>
     <tr><th>범위</th><th>느낌</th></tr>
     <tr><td>~75 이하</td><td>매우 느림 (발라드, 앰비언트)</td></tr>
@@ -1182,9 +1216,13 @@ with tab3:
     </table>
 
     <h2>5. Mood(자동분류 무드)</h2>
-    <p>Valence(정서 긍정성)와 Energy(각성도) 두 축으로 만든 3x3 격자를 기준으로 기본 무드를 정하고,
-    Acousticness와 Danceability 값에 따라 "어쿠스틱", "일렉트로닉", "댄서블" 같은 세부 태그를 추가로 붙입니다.
-    별도의 모델 호출 없이 이미 계산된 Essentia 지표들만으로 계산돼요.</p>
+    <p>Valence(정서 긍정성)와 Energy(각성도)를 정서 원형모델(circumplex model) 평면에 좌표로 놓고,
+    45도 간격 8방향(따뜻한·신나는·긴장감 있는·격앙된·우울한·쓸쓸한·나른한·평온한) + 중심(담백한) 중
+    가장 가까운 방향으로 기본 무드를 정합니다. 원점에서 얼마나 떨어져 있는지(감정의 강도)에 따라
+    "은은한"~"짙은" 강도를 붙이고, Acousticness·Danceability·Instrumentalness 값에 따라
+    "어쿠스틱", "일렉트로닉", "댄서블", "연주곡 성격" 같은 세부 태그를 추가로 붙입니다.
+    기본 방향 9종 x 강도 3단계 x 태그 조합으로 훨씬 다양한 무드가 나오며, 별도의 모델 호출 없이
+    이미 계산된 Essentia 지표들만으로 계산돼요.</p>
 
     </div>
     """, unsafe_allow_html=True)
