@@ -781,18 +781,15 @@ tab1, tab4, tab3 = st.tabs([
 with tab1:
     uploaded = st.file_uploader("음원 파일 업로드 (mp3, wav)", type=["mp3", "wav"], key="single")
     if uploaded:
-        st.audio(uploaded.getvalue())
-
         ensure_models()
         result = analyze_audio(uploaded.getvalue(), uploaded.name)
-        render_report(result)
 
-        c_radar, c_meta = st.columns([1, 1])
-        with c_radar:
-            st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
-            st.pyplot(plot_radar(result, title=uploaded.name), use_container_width=False)
+        left_col, right_col = st.columns([4, 1])
 
-        with c_meta:
+        with left_col:
+            st.audio(uploaded.getvalue())
+            render_report(result)
+
             tmp_tag_path = f"/tmp/tag_{uploaded.name}"
             with open(tmp_tag_path, "wb") as f:
                 f.write(uploaded.getvalue())
@@ -800,6 +797,10 @@ with tab1:
             title_value, artist_value = render_lastfm_block(
                 "single", default_title, default_artist, LASTFM_API_KEY
             )
+
+        with right_col:
+            st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
+            st.pyplot(plot_radar(result, figsize=(2.0, 2.0)), use_container_width=True)
 
         if st.button("📚 라이브러리에 저장", key="save_single"):
             save_to_library(make_library_entry(result, uploaded.name, title=title_value, artist=artist_value))
