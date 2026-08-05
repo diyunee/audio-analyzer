@@ -170,6 +170,7 @@ with st.sidebar:
         st.caption(f"✅ 키 등록됨 ({LASTFM_API_KEY[:4]}...{LASTFM_API_KEY[-4:]})")
     else:
         st.caption("⚠️ 아직 Last.fm API Key가 입력되지 않았어요.")
+    st.caption("💡 파일명을 '제목_아티스트.mp3'로 올리면 제목/아티스트가 자동으로 채워져요.")
 
 # ============================================================
 # 모델 다운로드 (최초 1회만, 캐시됨)
@@ -462,20 +463,41 @@ def cosine_similarity(vec_a, vec_b):
 
 
 # ============================================================
-# 아티스트 태그 추출 (ID3 등) + Last.fm 유사 아티스트
+# 파일명 / 태그에서 제목·아티스트 추출
 # ============================================================
-def extract_artist_tag(path):
-    """오디오 파일의 태그(ID3 등)에서 아티스트명을 추출. 실패 시 빈 문자열."""
+def parse_filename_title_artist(filename):
+    """'제목_아티스트.mp3' 형식의 파일명을 파싱. 언더스코어 없으면 제목만 반환."""
+    name = os.path.splitext(filename)[0]
+    if "_" in name:
+        title, artist = name.split("_", 1)
+        return title.strip(), artist.strip()
+    return name.strip(), ""
+
+
+def extract_audio_tags(path):
+    """오디오 파일의 ID3 등 태그에서 제목/아티스트 추출. 실패 시 빈 문자열."""
     try:
         from mutagen import File as MutagenFile
         audio = MutagenFile(path, easy=True)
-        if audio and "artist" in audio and audio["artist"]:
-            return str(audio["artist"][0])
+        title = str(audio["title"][0]) if audio and "title" in audio and audio["title"] else ""
+        artist = str(audio["artist"][0]) if audio and "artist" in audio and audio["artist"] else ""
+        return title, artist
     except Exception:
-        pass
-    return ""
+        return "", ""
 
 
+def resolve_title_artist(filename, path):
+    """파일명 파싱을 우선으로 하고, 정보가 없는 부분만 ID3 태그로 보완."""
+    name_title, name_artist = parse_filename_title_artist(filename)
+    tag_title, tag_artist = extract_audio_tags(path) if path else ("", "")
+    title = name_title or tag_title
+    artist = name_artist or tag_artist
+    return title, artist
+
+
+# ============================================================
+# Last.fm 유사 아티스트 / 유사곡
+# ============================================================
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
 def get_similar_artists(artist_name, api_key, limit=6):
     """Last.fm artist.getSimilar 호출. [{name, match, url}, ...] 반환."""
@@ -508,6 +530,42 @@ def get_similar_artists(artist_name, api_key, limit=6):
         return []
 
 
+@st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
+def get_similar_tracks(artist_name, track_name, api_key, limit=6):
+    """Last.fm track.getSimilar 호출. [{name, artist, match, url}, ...] 반환."""
+    if not artist_name or not track_name or not api_key:
+        return []
+    url = "https://ws.audioscrobbler.com/2.0/"
+    params = {
+        "method": "track.getsimilar",
+        "artist": artist_name,
+        "track": track_name,
+        "api_key": api_key,
+        "format": "json",
+        "limit": limit,
+        "autocorrect": 1,
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=8)
+        data = resp.json()
+        if "error" in data:
+            return []
+        tracks = data.get("similartracks", {}).get("track", [])
+        result = []
+        for t in tracks:
+            artist_field = t.get("artist", {})
+            artist_name_out = artist_field.get("name", "") if isinstance(artist_field, dict) else str(artist_field)
+            result.append({
+                "name": t.get("name", ""),
+                "artist": artist_name_out,
+                "match": float(t.get("match", 0) or 0),
+                "url": t.get("url", ""),
+            })
+        return result
+    except Exception:
+        return []
+
+
 def render_similar_artists(artist_name, api_key, limit=6):
     if not api_key:
         st.caption("⚠️ 사이드바에 Last.fm API Key를 입력하면 유사 아티스트를 볼 수 있어요.")
@@ -528,12 +586,34 @@ def render_similar_artists(artist_name, api_key, limit=6):
         )
 
 
+def render_similar_tracks(artist_name, track_name, api_key, limit=6):
+    if not api_key:
+        st.caption("⚠️ 사이드바에 Last.fm API Key를 입력하면 유사곡을 볼 수 있어요.")
+        return
+    if not artist_name or not track_name:
+        st.caption("제목과 아티스트를 입력하면 유사곡을 찾아드려요.")
+        return
+    similar = get_similar_tracks(artist_name, track_name, api_key, limit=limit)
+    if not similar:
+        st.caption(f"'{track_name}'에 대한 유사곡 정보를 찾을 수 없어요.")
+        return
+    for t in similar:
+        label = f'{t["name"]} — {t["artist"]}'
+        st.markdown(
+            f'<div class="genre-row"><span><a href="{t["url"]}" target="_blank" '
+            f'style="color:#1A1D24;text-decoration:none;">{label}</a></span>'
+            f'<span>{t["match"]*100:.1f}%</span></div>',
+            unsafe_allow_html=True,
+        )
+
+
 # ============================================================
 # 라이브러리 저장/불러오기
 # ============================================================
-def make_library_entry(result, filename, artist=""):
+def make_library_entry(result, filename, title="", artist=""):
     entry = {k: v for k, v in result.items() if k != "audio_16k"}
     entry["filename"] = filename
+    entry["title"] = title
     entry["artist"] = artist
     return entry
 
@@ -570,10 +650,11 @@ def save_to_library(entry):
     return lib
 
 
-def update_library_artist(filename, artist):
+def update_library_meta(filename, title, artist):
     lib = load_library()
     for s in lib:
         if s["filename"] == filename:
+            s["title"] = title
             s["artist"] = artist
     with open(LIBRARY_PATH, "w") as f:
         json.dump(lib, f)
@@ -581,7 +662,7 @@ def update_library_artist(filename, artist):
 
 
 # ============================================================
-# 시각화 (레이더 차트 / 파형·스펙트로그램)
+# 시각화 (레이더 차트)
 # ============================================================
 def plot_radar(result, title="", figsize=(2.8, 2.8)):
     labels = [
@@ -667,6 +748,29 @@ def render_report(result):
         """, unsafe_allow_html=True)
 
 
+def render_lastfm_block(key_prefix, default_title, default_artist, api_key):
+    """제목/아티스트 입력 UI + 유사 아티스트/유사곡 결과를 함께 렌더링."""
+    c1, c2 = st.columns(2)
+    with c1:
+        title_value = st.text_input(
+            "곡 제목", value=default_title, key=f"title_{key_prefix}",
+            placeholder="예: 좋은날"
+        )
+    with c2:
+        artist_value = st.text_input(
+            "아티스트 이름", value=default_artist, key=f"artist_{key_prefix}",
+            placeholder="예: IU, 아이유"
+        )
+
+    st.markdown('<div class="section-label">유사 아티스트 (Last.fm)</div>', unsafe_allow_html=True)
+    render_similar_artists(artist_value, api_key)
+
+    st.markdown('<div class="section-label">유사곡 (Last.fm)</div>', unsafe_allow_html=True)
+    render_similar_tracks(artist_value, title_value, api_key)
+
+    return title_value, artist_value
+
+
 # ============================================================
 # 탭 구성
 # ============================================================
@@ -683,25 +787,22 @@ with tab1:
         result = analyze_audio(uploaded.getvalue(), uploaded.name)
         render_report(result)
 
-        c_radar, c_artist = st.columns([1, 1])
+        c_radar, c_meta = st.columns([1, 1])
         with c_radar:
             st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
             st.pyplot(plot_radar(result, title=uploaded.name), use_container_width=False)
 
-        with c_artist:
-            st.markdown('<div class="section-label">유사 아티스트 (Last.fm)</div>', unsafe_allow_html=True)
+        with c_meta:
             tmp_tag_path = f"/tmp/tag_{uploaded.name}"
             with open(tmp_tag_path, "wb") as f:
                 f.write(uploaded.getvalue())
-            detected_artist = extract_artist_tag(tmp_tag_path)
-            artist_name = st.text_input(
-                "아티스트 이름", value=detected_artist, key="artist_single",
-                placeholder="예: IU, 아이유"
+            default_title, default_artist = resolve_title_artist(uploaded.name, tmp_tag_path)
+            title_value, artist_value = render_lastfm_block(
+                "single", default_title, default_artist, LASTFM_API_KEY
             )
-            render_similar_artists(artist_name, LASTFM_API_KEY)
 
         if st.button("📚 라이브러리에 저장", key="save_single"):
-            save_to_library(make_library_entry(result, uploaded.name, artist=artist_name))
+            save_to_library(make_library_entry(result, uploaded.name, title=title_value, artist=artist_value))
             save_audio_file(uploaded.getvalue(), uploaded.name)
             st.success(f"'{uploaded.name}'을(를) 라이브러리에 저장했어요.")
 
@@ -828,8 +929,8 @@ with tab4:
             tmp_tag_path = f"/tmp/tag_{f.name}"
             with open(tmp_tag_path, "wb") as tf:
                 tf.write(f.getvalue())
-            detected_artist = extract_artist_tag(tmp_tag_path)
-            entry = make_library_entry(r, f.name, artist=detected_artist)
+            default_title, default_artist = resolve_title_artist(f.name, tmp_tag_path)
+            entry = make_library_entry(r, f.name, title=default_title, artist=default_artist)
             save_to_library(entry)
             save_audio_file(f.getvalue(), f.name)
             batch_results.append(entry)
@@ -871,24 +972,21 @@ with tab4:
 
                     render_report(entry)
 
-                    st.markdown('<div class="section-label">유사 아티스트 (Last.fm)</div>', unsafe_allow_html=True)
-                    audio_path_for_tag = get_audio_path(entry["filename"])
-                    fallback_artist = extract_artist_tag(audio_path_for_tag) if audio_path_for_tag else ""
-                    artist_key = f"artist_{entry['filename']}"
-                    artist_value = st.text_input(
-                        "아티스트 이름",
-                        value=entry.get("artist") or fallback_artist,
-                        key=artist_key,
+                    fallback_title, fallback_artist = resolve_title_artist(entry["filename"], get_audio_path(entry["filename"]))
+                    default_title = entry.get("title") or fallback_title
+                    default_artist = entry.get("artist") or fallback_artist
+
+                    title_value, artist_value = render_lastfm_block(
+                        entry["filename"], default_title, default_artist, LASTFM_API_KEY
                     )
-                    if artist_value != entry.get("artist", ""):
-                        update_library_artist(entry["filename"], artist_value)
-                    render_similar_artists(artist_value, LASTFM_API_KEY)
+                    if title_value != entry.get("title", "") or artist_value != entry.get("artist", ""):
+                        update_library_meta(entry["filename"], title_value, artist_value)
 
                 with right_col:
                     st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
                     st.pyplot(plot_radar(entry, figsize=(2.0, 2.0)), use_container_width=True)
 
-        st.markdown('<div class="section-label">유사곡 추천</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">유사곡 추천 (내 라이브러리 기준)</div>', unsafe_allow_html=True)
         selected_name = st.selectbox("기준 곡 선택", [s["filename"] for s in library])
         selected = next(s for s in library if s["filename"] == selected_name)
 
