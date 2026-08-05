@@ -77,6 +77,28 @@ div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
 .metric-value.amber { color: #B96E1C; }
 .metric-sub { color: #8A93A3; font-size: 0.62rem; margin-top: 1px; line-height: 1.15; }
 
+.mood-card {
+    background: #EFF7F5;
+    border: 1px solid #1F8F7B;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+}
+.mood-label {
+    font-size: 0.62rem;
+    color: #146B5C;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+}
+.mood-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.15rem;
+    color: #146B5C;
+    font-weight: 700;
+}
+.mood-desc { color: #4B7A70; font-size: 0.72rem; margin-top: 2px; }
+
 .section-label {
     font-family: 'Space Mono', monospace;
     color: #B96E1C;
@@ -207,7 +229,7 @@ def mpath(fname):
 
 
 # ============================================================
-# 장르 기반 BPM 옥타브 보정
+# 장르 기반 BPM 옥타브 보정 (+ 댄서빌리티 prior)
 # ============================================================
 GENRE_BPM_CENTER = {
     "Ballad": 70, "Vocal": 75, "R&B": 80, "Soul": 80,
@@ -220,18 +242,35 @@ GENRE_BPM_CENTER = {
 }
 
 
-def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, top_n=5):
+def _danceability_bpm_prior(danceability):
+    """댄서빌리티(리듬 규칙성) 값을 바탕으로 그럴듯한 BPM 중심값을 추정.
+    리듬이 규칙적일수록 90~140 BPM대를, 불규칙할수록 저속 대역을 선호."""
+    if danceability < 0.5:
+        return 65
+    elif danceability < 1.0:
+        return 92
+    elif danceability < 1.5:
+        return 118
+    else:
+        return 136
+
+
+def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, danceability=1.0, top_n=5):
     top_idx = np.argsort(avg_predictions)[::-1][:top_n]
     top_genres = [(labels[i], avg_predictions[i]) for i in top_idx]
     half_bpm, double_bpm = bpm_candidate / 2, bpm_candidate * 2
+    dance_center = _danceability_bpm_prior(danceability)
 
     def score(bpm_value):
-        s = 0
+        s = 0.0
         for genre_label, prob in top_genres:
             for keyword, center in GENRE_BPM_CENTER.items():
                 if keyword.lower() in genre_label.lower():
                     distance = abs(bpm_value - center)
                     s += np.exp(-(distance ** 2) / (2 * 25 ** 2)) * prob
+        # 댄서빌리티 기반 prior (가중치 0.5) — 장르 매칭이 약할 때 특히 중요한 보정 근거가 됨
+        dist_dance = abs(bpm_value - dance_center)
+        s += 0.5 * np.exp(-(dist_dance ** 2) / (2 * 30 ** 2))
         return s
 
     scores = {"원본": (bpm_candidate, score(bpm_candidate)),
@@ -315,6 +354,55 @@ METRIC_LABELS = {
     "spectral_centroid": "Spectral Centroid(음색밝기)",
     "zcr": "Zero Crossing Rate(타격감)",
 }
+
+
+# ============================================================
+# 무드 자동 생성 (Essentia feature 기반 규칙 분류)
+# ============================================================
+# valence(정서 긍정성) x energy(각성도) 2축의 정서 원형모델(circumplex model)을
+# 3x3 그리드로 나눠 기본 무드를 정하고, acousticness/danceability로 세부 태그를 덧붙임
+MOOD_GRID = {
+    (0, 0): ("쓸쓸한 무드", "차분하면서도 어두운 정서가 느껴져요"),
+    (0, 1): ("멜랑콜리한 무드", "잔잔하지만 씁쓸한 여운이 있어요"),
+    (0, 2): ("긴장감 있는 무드", "어둡고 강렬한 에너지가 느껴져요"),
+    (1, 0): ("나른한 무드", "느슨하고 여유로운 분위기예요"),
+    (1, 1): ("담담한 무드", "특별히 튀지 않는 중립적인 감정이에요"),
+    (1, 2): ("역동적인 무드", "활발하지만 감정선이 또렷하진 않아요"),
+    (2, 0): ("따뜻한 무드", "포근하고 편안한 긍정의 느낌이에요"),
+    (2, 1): ("경쾌한 무드", "밝고 산뜻한 분위기예요"),
+    (2, 2): ("신나는 무드", "밝고 에너지 넘치는 무드예요"),
+}
+
+
+def _tri_level(x, lo=0.35, hi=0.65):
+    if x < lo:
+        return 0
+    if x > hi:
+        return 2
+    return 1
+
+
+def determine_mood(result):
+    """valence/energy로 기본 무드를 정하고, acousticness/danceability로 태그를 덧붙임."""
+    vl = _tri_level(result["valence"])
+    el = _tri_level(result["energy"])
+    label, desc = MOOD_GRID[(vl, el)]
+
+    tags = []
+    ac = result.get("acousticness", 0.5)
+    dance = result.get("danceability", 1.0)
+    if ac >= 0.6:
+        tags.append("어쿠스틱")
+    elif ac < 0.3:
+        tags.append("일렉트로닉")
+    if dance >= 1.3:
+        tags.append("댄서블")
+    elif dance < 0.5:
+        tags.append("자유로운 박자")
+
+    if tags:
+        label = f'{label} · {" · ".join(tags)}'
+    return label, desc
 
 
 # ============================================================
@@ -435,15 +523,18 @@ def analyze_audio(file_bytes, filename):
     valence = float((emomusic_pred[emomusic_labels.index("valence")] - 1) / 8)
     energy = float((emomusic_pred[emomusic_labels.index("arousal")] - 1) / 8)
 
-    final_bpm = float(genre_based_octave_correction(feats['rhythm.bpm'], genre_labels, genre_pred))
+    danceability = float(feats['rhythm.danceability'])
+    final_bpm = float(genre_based_octave_correction(
+        feats['rhythm.bpm'], genre_labels, genre_pred, danceability=danceability
+    ))
 
     top5_idx = np.argsort(genre_pred)[::-1][:5]
     top_genres = [(genre_labels[i], float(genre_pred[i])) for i in top5_idx]
 
-    return {
+    result = {
         "duration": float(feats['metadata.audio_properties.length']),
         "bpm": final_bpm,
-        "danceability": float(feats['rhythm.danceability']),
+        "danceability": danceability,
         "loudness": float(feats['lowlevel.average_loudness']),
         "dynamic_complexity": float(feats['lowlevel.dynamic_complexity']),
         "spectral_centroid": float(feats['lowlevel.spectral_centroid.mean']),
@@ -455,11 +546,73 @@ def analyze_audio(file_bytes, filename):
         "top_genres": top_genres,
         "embedding_vector": np.mean(embeddings, axis=0).tolist(),
     }
+    mood_label, mood_desc = determine_mood(result)
+    result["mood_label"] = mood_label
+    result["mood_desc"] = mood_desc
+    return result
 
 
 def cosine_similarity(vec_a, vec_b):
     a, b = np.array(vec_a), np.array(vec_b)
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+
+def compute_combined_recommendations(selected, others, api_key, essentia_weight=0.6, lastfm_weight=0.4):
+    """Essentia 임베딩 유사도(음향적 특징)와 Last.fm 아티스트 연관도(청취 데이터 기반)를
+    가중합해 최종 추천 점수를 계산."""
+    selected_artist = (selected.get("artist") or "").strip()
+    similar_artist_map = {}
+    if api_key and selected_artist:
+        for a in get_similar_artists(selected_artist, api_key, limit=30):
+            similar_artist_map[a["name"].lower()] = a["match"]
+
+    results = []
+    for s in others:
+        essentia_score = cosine_similarity(selected["embedding_vector"], s["embedding_vector"])
+        other_artist = (s.get("artist") or "").strip()
+
+        lastfm_score = 0.0
+        if other_artist:
+            if selected_artist and other_artist.lower() == selected_artist.lower():
+                lastfm_score = 1.0
+            elif other_artist.lower() in similar_artist_map:
+                lastfm_score = similar_artist_map[other_artist.lower()]
+
+        combined = essentia_weight * essentia_score + lastfm_weight * lastfm_score
+        results.append({
+            "filename": s["filename"],
+            "title": s.get("title") or s["filename"],
+            "artist": other_artist,
+            "essentia_score": essentia_score,
+            "lastfm_score": lastfm_score,
+            "combined_score": combined,
+        })
+    results.sort(key=lambda x: x["combined_score"], reverse=True)
+    return results
+
+
+def build_recommend_reason(rec, selected_artist):
+    """추천 근거를 사람이 읽을 수 있는 한 줄 설명으로 변환."""
+    parts = []
+    es_score = rec["essentia_score"]
+    if es_score >= 0.85:
+        parts.append("장르·리듬·음색이 매우 비슷한 곡")
+    elif es_score >= 0.7:
+        parts.append("음향적 특징이 꽤 비슷한 곡")
+    elif es_score >= 0.5:
+        parts.append("음향적 특징이 어느 정도 비슷한 곡")
+    else:
+        parts.append("음향적 특징은 다소 다른 곡")
+
+    ls_score = rec["lastfm_score"]
+    if selected_artist and rec["artist"] and rec["artist"].lower() == selected_artist.lower():
+        parts.append("동일 아티스트")
+    elif ls_score > 0:
+        parts.append(f"Last.fm 기준 아티스트 연관도 {ls_score*100:.0f}%")
+    else:
+        parts.append("Last.fm에서는 아티스트 간 연관성 미확인")
+
+    return " · ".join(parts)
 
 
 # ============================================================
@@ -531,15 +684,44 @@ def get_similar_artists(artist_name, api_key, limit=6):
 
 
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
-def get_similar_tracks(artist_name, track_name, api_key, limit=6):
-    """Last.fm track.getSimilar 호출. [{name, artist, match, url}, ...] 반환."""
-    if not artist_name or not track_name or not api_key:
+def lastfm_resolve_track(track_name, artist_name, api_key):
+    """Last.fm track.search로 표기 차이(오탈자, 영문/한글, 띄어쓰기 등)를 보정한
+    가장 근접한 트랙명·아티스트명을 찾음. track.getSimilar가 정확한 표기에 민감해서
+    실패하는 경우가 많아, 검색으로 먼저 표준 표기를 알아낸 뒤 유사곡을 조회함."""
+    if not track_name or not api_key:
+        return track_name, artist_name
+    url = "https://ws.audioscrobbler.com/2.0/"
+    params = {
+        "method": "track.search",
+        "track": track_name,
+        "artist": artist_name,
+        "api_key": api_key,
+        "format": "json",
+        "limit": 1,
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=8)
+        data = resp.json()
+        matches = data.get("results", {}).get("trackmatches", {}).get("track", [])
+        if isinstance(matches, dict):
+            matches = [matches]
+        if matches:
+            m = matches[0]
+            return m.get("name", track_name) or track_name, m.get("artist", artist_name) or artist_name
+    except Exception:
+        pass
+    return track_name, artist_name
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
+def get_artist_top_tracks(artist_name, api_key, limit=6):
+    """artist.getTopTracks. track.getSimilar 결과가 비었을 때의 대체(fallback) 추천용."""
+    if not artist_name or not api_key:
         return []
     url = "https://ws.audioscrobbler.com/2.0/"
     params = {
-        "method": "track.getsimilar",
+        "method": "artist.gettoptracks",
         "artist": artist_name,
-        "track": track_name,
         "api_key": api_key,
         "format": "json",
         "limit": limit,
@@ -550,7 +732,7 @@ def get_similar_tracks(artist_name, track_name, api_key, limit=6):
         data = resp.json()
         if "error" in data:
             return []
-        tracks = data.get("similartracks", {}).get("track", [])
+        tracks = data.get("toptracks", {}).get("track", [])
         result = []
         for t in tracks:
             artist_field = t.get("artist", {})
@@ -558,12 +740,65 @@ def get_similar_tracks(artist_name, track_name, api_key, limit=6):
             result.append({
                 "name": t.get("name", ""),
                 "artist": artist_name_out,
-                "match": float(t.get("match", 0) or 0),
+                "match": None,  # 유사도가 아닌 인기 순위 기반이라 match 없음
                 "url": t.get("url", ""),
             })
         return result
     except Exception:
         return []
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
+def get_similar_tracks(artist_name, track_name, api_key, limit=6):
+    """Last.fm 기반 유사곡 조회.
+    1) track.search로 정확한 표기를 먼저 보정
+    2) 보정된 표기로 track.getSimilar 시도, 실패 시 원래 입력값으로 재시도
+    3) 그래도 결과가 없으면 artist.getTopTracks로 대체
+    반환값: (결과 리스트, 대체(fallback) 여부)"""
+    if not artist_name or not track_name or not api_key:
+        return [], False
+
+    resolved_track, resolved_artist = lastfm_resolve_track(track_name, artist_name, api_key)
+
+    def _call_getsimilar(t, a):
+        url = "https://ws.audioscrobbler.com/2.0/"
+        params = {
+            "method": "track.getsimilar",
+            "artist": a,
+            "track": t,
+            "api_key": api_key,
+            "format": "json",
+            "limit": limit,
+            "autocorrect": 1,
+        }
+        try:
+            resp = requests.get(url, params=params, timeout=8)
+            data = resp.json()
+            if "error" in data:
+                return []
+            tracks = data.get("similartracks", {}).get("track", [])
+            out = []
+            for tr in tracks:
+                artist_field = tr.get("artist", {})
+                artist_name_out = artist_field.get("name", "") if isinstance(artist_field, dict) else str(artist_field)
+                out.append({
+                    "name": tr.get("name", ""),
+                    "artist": artist_name_out,
+                    "match": float(tr.get("match", 0) or 0),
+                    "url": tr.get("url", ""),
+                })
+            return out
+        except Exception:
+            return []
+
+    result = _call_getsimilar(resolved_track, resolved_artist)
+    if not result and (resolved_track != track_name or resolved_artist != artist_name):
+        result = _call_getsimilar(track_name, artist_name)
+    if result:
+        return result, False
+
+    fallback = get_artist_top_tracks(resolved_artist or artist_name, api_key, limit=limit)
+    return fallback, bool(fallback)
 
 
 def render_similar_artists(artist_name, api_key, limit=6):
@@ -593,16 +828,19 @@ def render_similar_tracks(artist_name, track_name, api_key, limit=6):
     if not artist_name or not track_name:
         st.caption("제목과 아티스트를 입력하면 유사곡을 찾아드려요.")
         return
-    similar = get_similar_tracks(artist_name, track_name, api_key, limit=limit)
+    similar, is_fallback = get_similar_tracks(artist_name, track_name, api_key, limit=limit)
     if not similar:
-        st.caption(f"'{track_name}'에 대한 유사곡 정보를 찾을 수 없어요.")
+        st.caption(f"'{track_name}'에 대한 유사곡 정보를 찾을 수 없어요. 제목/아티스트 표기를 다르게 입력해보세요 (예: 영문 표기).")
         return
+    if is_fallback:
+        st.caption("💡 정확히 일치하는 유사곡을 찾지 못해, 같은 아티스트의 인기곡으로 대신 보여드려요.")
     for t in similar:
         label = f'{t["name"]} — {t["artist"]}'
+        match_text = f'{t["match"]*100:.1f}%' if t["match"] is not None else "인기곡"
         st.markdown(
             f'<div class="genre-row"><span><a href="{t["url"]}" target="_blank" '
             f'style="color:#1A1D24;text-decoration:none;">{label}</a></span>'
-            f'<span>{t["match"]*100:.1f}%</span></div>',
+            f'<span>{match_text}</span></div>',
             unsafe_allow_html=True,
         )
 
@@ -721,7 +959,24 @@ def metric_card(label, value, sub="", amber=False):
     """, unsafe_allow_html=True)
 
 
+def render_mood_banner(result):
+    mood_label = result.get("mood_label")
+    mood_desc = result.get("mood_desc")
+    if not mood_label:
+        # 과거에 저장된 라이브러리 항목처럼 무드 필드가 없는 경우 즉석에서 계산
+        mood_label, mood_desc = determine_mood(result)
+    st.markdown(f"""
+    <div class="mood-card">
+        <div class="mood-label">Mood(자동분류 무드)</div>
+        <div class="mood-value">{mood_label}</div>
+        <div class="mood-desc">{mood_desc}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
 def render_report(result):
+    render_mood_banner(result)
+
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         metric_card(METRIC_LABELS["duration"], format_duration(result["duration"]))
@@ -825,7 +1080,9 @@ with tab3:
     <h2>1. 리듬 / 템포</h2>
 
     <h3>BPM(템포)</h3>
-    <p>장르 예측 Top5와 각 장르별 전형적인 템포 중심값을 대조해서 원본/절반/두배 BPM 중 가장 그럴듯한 값을 자동으로 채택하는 방식입니다.</p>
+    <p>장르 예측 Top5와 각 장르별 전형적인 템포 중심값, 그리고 댄서빌리티(리듬 규칙성)로 추정한 템포 대역을 함께 대조해서
+    원본/절반/두배 BPM 중 가장 그럴듯한 값을 자동으로 채택하는 방식입니다. 장르 매칭이 애매한 곡도 댄서빌리티 정보로
+    옥타브 오류(정박의 절반/두배로 잘못 인식되는 문제)를 추가로 보정합니다.</p>
     <table>
     <tr><th>범위</th><th>느낌</th></tr>
     <tr><td>~75 이하</td><td>매우 느림 (발라드, 앰비언트)</td></tr>
@@ -924,6 +1181,11 @@ with tab3:
     <tr><td>0.6 이상</td><td>밝고 긍정적인 정서 (메이저 성향과 자주 연관)</td></tr>
     </table>
 
+    <h2>5. Mood(자동분류 무드)</h2>
+    <p>Valence(정서 긍정성)와 Energy(각성도) 두 축으로 만든 3x3 격자를 기준으로 기본 무드를 정하고,
+    Acousticness와 Danceability 값에 따라 "어쿠스틱", "일렉트로닉", "댄서블" 같은 세부 태그를 추가로 붙입니다.
+    별도의 모델 호출 없이 이미 계산된 Essentia 지표들만으로 계산돼요.</p>
+
     </div>
     """, unsafe_allow_html=True)
 
@@ -1007,13 +1269,20 @@ with tab4:
 
         others = [s for s in library if s["filename"] != selected_name]
         if others:
-            sims = [
-                (s["filename"], cosine_similarity(selected["embedding_vector"], s["embedding_vector"]))
-                for s in others
-            ]
-            sims.sort(key=lambda x: x[1], reverse=True)
-            for name, score in sims[:3]:
-                st.markdown(f'<div class="genre-row"><span>{name}</span><span>{score*100:.1f}%</span></div>', unsafe_allow_html=True)
+            recs = compute_combined_recommendations(selected, others, LASTFM_API_KEY)
+            selected_artist = (selected.get("artist") or "").strip()
+            st.caption("Essentia 음향 유사도(60%) + Last.fm 아티스트 연관도(40%)를 합산한 최종 추천 점수예요.")
+            for rec in recs[:3]:
+                reason = build_recommend_reason(rec, selected_artist)
+                display_name = f'{rec["title"]}' + (f' — {rec["artist"]}' if rec["artist"] else "")
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">{display_name}</div>
+                    <div class="metric-value">종합 추천 점수 {rec['combined_score']*100:.1f}%</div>
+                    <div class="metric-sub">Essentia 유사도 {rec['essentia_score']*100:.1f}% · Last.fm 연관도 {rec['lastfm_score']*100:.1f}%</div>
+                    <div class="metric-sub">💬 추천 이유: {reason}</div>
+                </div>
+                """, unsafe_allow_html=True)
         else:
             st.caption("비교할 다른 곡이 아직 없어요.")
 
