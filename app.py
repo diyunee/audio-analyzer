@@ -800,7 +800,7 @@ with tab1:
 
         with right_col:
             st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
-            st.pyplot(plot_radar(result, figsize=(2.0, 2.0)), use_container_width=True)
+            st.pyplot(plot_radar(result, figsize=(2.0, 2.0)), use_container_width=False)
 
         if st.button("📚 라이브러리에 저장", key="save_single"):
             save_to_library(make_library_entry(result, uploaded.name, title=title_value, artist=artist_value))
@@ -985,7 +985,7 @@ with tab4:
 
                 with right_col:
                     st.markdown('<div class="section-label">감성 프로필</div>', unsafe_allow_html=True)
-                    st.pyplot(plot_radar(entry, figsize=(2.0, 2.0)), use_container_width=True)
+                    st.pyplot(plot_radar(entry, figsize=(2.0, 2.0)), use_container_width=False)
 
         st.markdown('<div class="section-label">유사곡 추천 (내 라이브러리 기준)</div>', unsafe_allow_html=True)
         selected_name = st.selectbox("기준 곡 선택", [s["filename"] for s in library])
