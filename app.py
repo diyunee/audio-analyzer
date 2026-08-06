@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
+import plotly.express as px
 
 # ============================================================
 # 그래프용 한글 폰트 설정 (한글 깨짐 방지)
@@ -92,7 +93,7 @@ div[data-testid="stHorizontalBlock"] { gap: 0.8rem; }
     box-sizing: border-box;
 }
 .metric-card.recommend-card {
-    width: 190px;
+    width: 100%;
 }
 .metric-label {
     font-size: 0.66rem;
@@ -1083,47 +1084,59 @@ def plot_range_gauge(value, config, figsize=(1.9, 0.62)):
     return fig
 
 
-def plot_library_map(library, figsize=(6.0, 6.0)):
-    """라이브러리 전체 곡을 Valence(x) x Energy(y) 평면에 흩뿌려 한눈에 보여주는 2D 지도.
+def build_library_map(library, height=620):
+    """라이브러리 전체 곡을 Valence(x) x Energy(y) 평면에 흩뿌리는 인터랙티브 지도.
     무드 배너와 같은 정서 원형모델(circumplex) 좌표계를 사용.
-    전용 탭에 크게 보여줄 것이므로 넉넉한 크기로 그리고, Acousticness는 하단 가로
-    컬러바로 표시하며 라벨은 눈금 숫자와 겹치지 않도록 아래쪽으로 충분히 띄운다."""
-    fig, ax = plt.subplots(figsize=figsize)
-    fig.patch.set_facecolor("white")
-    ax.set_facecolor("#F7F8FA")
+    곡 제목은 화면에 항상 표시하지 않고 마우스를 올렸을 때(hover)만 보여줘서,
+    라이브러리에 곡이 아무리 많이 쌓여도 라벨끼리 겹치는 문제가 생기지 않도록 함."""
+    df = pd.DataFrame([{
+        "title": s.get("title") or s["filename"],
+        "artist": s.get("artist") or "미상",
+        "valence": s["valence"],
+        "energy": s["energy"],
+        "danceability": s.get("danceability", 1.0),
+        "acousticness": s.get("acousticness", 0.5),
+    } for s in library])
 
-    ax.axhline(0.5, color="#D1D5DB", linewidth=1, linestyle="--")
-    ax.axvline(0.5, color="#D1D5DB", linewidth=1, linestyle="--")
-
-    xs = [s["valence"] for s in library]
-    ys = [s["energy"] for s in library]
-    sizes = [60 + min(s.get("danceability", 1.0), 1.5) * 60 for s in library]
-    colors = [s.get("acousticness", 0.5) for s in library]
-
-    sc = ax.scatter(xs, ys, s=sizes, c=colors, cmap="Blues", edgecolors="#1A1D24",
-                     linewidths=0.8, alpha=0.9, vmin=0, vmax=1)
-
-    for s in library:
-        label = s.get("title") or s["filename"]
-        if len(label) > 14:
-            label = label[:13] + "…"
-        ax.annotate(label, (s["valence"], s["energy"]), fontsize=8, color="#1A1D24",
-                    xytext=(6, 6), textcoords="offset points")
-
-    ax.set_xlim(-0.05, 1.05)
-    ax.set_ylim(-0.05, 1.05)
-    ax.set_xlabel("Valence (긍정정서) →", fontsize=9.5, color="#374151")
-    ax.set_ylabel("Energy (에너지) →", fontsize=9.5, color="#374151")
-    ax.tick_params(labelsize=8, colors="#6B7280")
-    for spine in ax.spines.values():
-        spine.set_color("#E5E7EB")
-
-    cbar = fig.colorbar(sc, ax=ax, orientation="horizontal", location="bottom",
-                         shrink=0.9, pad=0.16)
-    cbar.ax.tick_params(labelsize=8, colors="#6B7280", pad=4)
-    cbar.set_label("Acousticness (어쿠스틱함)", fontsize=9.5, color="#6B7280", labelpad=10)
-
-    fig.tight_layout(pad=0.6)
+    fig = px.scatter(
+        df, x="valence", y="energy",
+        size="danceability", color="acousticness",
+        color_continuous_scale=["#CFE8E2", "#8FCBB9", "#1F8F7B", "#146B5C", "#0B3A31"],
+        range_color=[0, 1.5],
+        size_max=30,
+        custom_data=["title", "artist", "danceability", "acousticness"],
+    )
+    fig.update_traces(
+        marker=dict(line=dict(width=1.2, color="#1A1D24"), opacity=0.9, sizemin=10),
+        hovertemplate=(
+            "<b>%{customdata[0]}</b><br>"
+            "%{customdata[1]}<br>"
+            "Valence %{x:.2f} · Energy %{y:.2f}<br>"
+            "Danceability %{customdata[2]:.2f} · Acousticness %{customdata[3]:.2f}"
+            "<extra></extra>"
+        ),
+    )
+    fig.add_hline(y=0.5, line_dash="dash", line_color="#D1D5DB", line_width=1)
+    fig.add_vline(x=0.5, line_dash="dash", line_color="#D1D5DB", line_width=1)
+    fig.update_layout(
+        plot_bgcolor="#F7F8FA",
+        paper_bgcolor="white",
+        font=dict(family="Manrope, sans-serif", color="#1A1D24"),
+        xaxis=dict(
+            title="Valence (긍정정서) →", range=[-0.08, 1.08],
+            color="#374151", gridcolor="#E5E7EB", zeroline=False,
+        ),
+        yaxis=dict(
+            title="Energy (에너지) →", range=[-0.08, 1.08],
+            color="#374151", gridcolor="#E5E7EB", zeroline=False,
+        ),
+        coloraxis_colorbar=dict(
+            title="Acousticness<br>(어쿠스틱함)", orientation="h",
+            y=-0.22, len=0.85, thickness=12,
+        ),
+        margin=dict(l=10, r=10, t=10, b=10),
+        height=height,
+    )
     return fig
 
 
@@ -1498,5 +1511,5 @@ with tab_map:
         st.caption("지도를 그리려면 라이브러리에 곡이 2개 이상 있어야 해요.")
     else:
         st.markdown('<div class="section-label">라이브러리 지도 (감성 분포 한눈에 보기)</div>', unsafe_allow_html=True)
-        st.caption("점의 위치 = Valence × Energy, 점 크기 = Danceability, 색 = Acousticness")
-        st.pyplot(plot_library_map(map_library), use_container_width=False)
+        st.caption("점의 위치 = Valence × Energy, 점 크기 = Danceability, 색 = Acousticness · 곡에 마우스를 올리면 제목이 나타나요")
+        st.plotly_chart(build_library_map(map_library), use_container_width=True)
