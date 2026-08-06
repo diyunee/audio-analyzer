@@ -10,6 +10,34 @@ import streamlit as st
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+
+# ============================================================
+# 그래프용 한글 폰트 설정 (한글 깨짐 방지)
+# ============================================================
+KOREAN_FONT_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/nanumgothic/NanumGothic-Regular.ttf"
+FONT_DIR = "fonts"
+FONT_PATH = os.path.join(FONT_DIR, "NanumGothic-Regular.ttf")
+
+
+def ensure_korean_font():
+    os.makedirs(FONT_DIR, exist_ok=True)
+    if not os.path.exists(FONT_PATH):
+        try:
+            urllib.request.urlretrieve(KOREAN_FONT_URL, FONT_PATH)
+        except Exception:
+            pass
+    if os.path.exists(FONT_PATH):
+        try:
+            fm.fontManager.addfont(FONT_PATH)
+            font_name = fm.FontProperties(fname=FONT_PATH).get_name()
+            matplotlib.rcParams['font.family'] = font_name
+        except Exception:
+            pass
+    matplotlib.rcParams['axes.unicode_minus'] = False
+
+
+ensure_korean_font()
 
 # ============================================================
 # 페이지 설정 + 커스텀 스타일 (스튜디오 VU미터 컨셉)
@@ -911,10 +939,9 @@ def plot_radar(result, title="", figsize=(2.8, 2.8)):
     return fig
 
 
-def plot_metric_bars(result, figsize=(5.2, 3.4)):
-    """분석 결과 수치들을 한눈에 비교할 수 있는 정규화 막대그래프(0~1 스케일)."""
+def plot_metric_bars(result, figsize=(3.4, 2.6)):
+    """분석 결과 수치들을 한눈에 비교할 수 있는 정규화 막대그래프(0~1 스케일). (BPM 제외)"""
     bar_defs = [
-        ("BPM", min(result["bpm"] / 200, 1.0)),
         ("Danceability", min(result["danceability"] / 1.5, 1.0)),
         ("Loudness", min(result["loudness"], 1.0)),
         ("Dynamic Complexity", min(result["dynamic_complexity"] / 8, 1.0)),
@@ -933,23 +960,24 @@ def plot_metric_bars(result, figsize=(5.2, 3.4)):
     y_pos = np.arange(len(names))
     ax.barh(y_pos, values, color=colors, height=0.55)
     ax.set_yticks(y_pos)
-    ax.set_yticklabels(names, fontsize=9, color="#1A1D24")
+    ax.set_yticklabels(names, fontsize=6.5, color="#1A1D24")
     ax.set_xlim(0, 1.0)
-    ax.set_xlabel("정규화된 값 (0~1)", fontsize=8, color="#6B7280")
-    ax.tick_params(axis='x', labelsize=8, colors="#6B7280")
+    ax.set_xlabel("정규화된 값 (0~1)", fontsize=6.5, color="#6B7280")
+    ax.tick_params(axis='x', labelsize=6.5, colors="#6B7280")
     for spine in ["top", "right"]:
         ax.spines[spine].set_visible(False)
     for spine in ["left", "bottom"]:
         ax.spines[spine].set_color("#E5E7EB")
     for i, v in enumerate(values):
-        ax.text(v + 0.02, i, f"{v:.2f}", va="center", fontsize=8, color="#1A1D24")
+        ax.text(v + 0.02, i, f"{v:.2f}", va="center", fontsize=6.5, color="#1A1D24")
     fig.tight_layout()
     return fig
 
 
-def plot_library_map(library, figsize=(6.5, 5.5)):
+def plot_library_map(library, figsize=(3.2, 3.2)):
     """라이브러리 전체 곡을 Valence(x) x Energy(y) 평면에 흩뿌려 한눈에 보여주는 2D 지도.
-    무드 배너와 같은 정서 원형모델(circumplex) 좌표계를 사용."""
+    무드 배너와 같은 정서 원형모델(circumplex) 좌표계를 사용.
+    (감성 프로필 오각형 그래프와 비슷한 크기로 축소, Acousticness는 하단 가로 컬러바로 표시)"""
     fig, ax = plt.subplots(figsize=figsize)
     fig.patch.set_facecolor("white")
     ax.set_facecolor("#F7F8FA")
@@ -959,30 +987,31 @@ def plot_library_map(library, figsize=(6.5, 5.5)):
 
     xs = [s["valence"] for s in library]
     ys = [s["energy"] for s in library]
-    sizes = [60 + min(s.get("danceability", 1.0), 1.5) * 60 for s in library]
+    sizes = [30 + min(s.get("danceability", 1.0), 1.5) * 30 for s in library]
     colors = [s.get("acousticness", 0.5) for s in library]
 
-    sc = ax.scatter(xs, ys, s=sizes, c=colors, cmap="YlGn_r", edgecolors="#1A1D24",
-                     linewidths=0.6, alpha=0.85, vmin=0, vmax=1)
+    sc = ax.scatter(xs, ys, s=sizes, c=colors, cmap="Blues", edgecolors="#1A1D24",
+                     linewidths=0.5, alpha=0.9, vmin=0, vmax=1)
 
     for s in library:
         label = s.get("title") or s["filename"]
-        if len(label) > 12:
-            label = label[:11] + "…"
-        ax.annotate(label, (s["valence"], s["energy"]), fontsize=7.5, color="#1A1D24",
-                    xytext=(5, 5), textcoords="offset points")
+        if len(label) > 10:
+            label = label[:9] + "…"
+        ax.annotate(label, (s["valence"], s["energy"]), fontsize=5.5, color="#1A1D24",
+                    xytext=(4, 4), textcoords="offset points")
 
     ax.set_xlim(-0.05, 1.05)
     ax.set_ylim(-0.05, 1.05)
-    ax.set_xlabel("Valence (긍정정서) →", fontsize=9, color="#374151")
-    ax.set_ylabel("Energy (에너지) →", fontsize=9, color="#374151")
-    ax.tick_params(labelsize=8, colors="#6B7280")
+    ax.set_xlabel("Valence (긍정정서) →", fontsize=6.5, color="#374151")
+    ax.set_ylabel("Energy (에너지) →", fontsize=6.5, color="#374151")
+    ax.tick_params(labelsize=6, colors="#6B7280")
     for spine in ax.spines.values():
         spine.set_color("#E5E7EB")
 
-    cbar = fig.colorbar(sc, ax=ax, shrink=0.7, pad=0.02)
-    cbar.set_label("Acousticness", fontsize=8, color="#6B7280")
-    cbar.ax.tick_params(labelsize=7, colors="#6B7280")
+    cbar = fig.colorbar(sc, ax=ax, orientation="horizontal", location="bottom",
+                         shrink=0.9, pad=0.28)
+    cbar.set_label("Acousticness (어쿠스틱함)", fontsize=6.5, color="#6B7280")
+    cbar.ax.tick_params(labelsize=6, colors="#6B7280")
 
     fig.tight_layout()
     return fig
