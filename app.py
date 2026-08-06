@@ -1026,15 +1026,12 @@ RANGE_METRIC_CONFIGS = {
         "fmt": "{:.2f}", "unit": "",
     },
 }
-# instrumentalness는 요청에 따라 항목별 구간 그래프에서 제외
-RANGE_GAUGE_ORDER = [
-    "bpm", "danceability", "loudness", "dynamic_complexity",
-    "spectral_centroid", "zcr", "acousticness", "energy", "valence",
-]
+# instrumentalness는 요청에 따라 구간 그래프에서 제외
 
 
-def plot_range_gauge(value, config, figsize=(2.3, 0.95)):
+def plot_range_gauge(value, config, figsize=(1.9, 0.62)):
     """지표 하나의 값이 해석 가이드 상 어느 구간에 속하는지 보여주는 작은 구간 막대.
+    각 metric-card 바로 아래에 작게 붙는 용도라서 최대한 소형으로 설계.
     구간 경계선(breakpoints)을 색 블록으로 나누고, 실제 값 위치를 세모/막대로 표시."""
     breakpoints = config["breakpoints"]
     vmax = config["vmax"]
@@ -1048,26 +1045,26 @@ def plot_range_gauge(value, config, figsize=(2.3, 0.95)):
 
     for i in range(n_bands):
         ax.barh(0, edges[i + 1] - edges[i], left=edges[i], height=0.55,
-                color=band_colors[i], edgecolor="white", linewidth=0.8)
+                color=band_colors[i], edgecolor="white", linewidth=0.6)
 
     v = min(max(value, edges[0]), edges[-1])
-    ax.plot([v, v], [-0.4, 0.4], color="#1A1D24", linewidth=1.8, solid_capstyle="round")
-    ax.scatter([v], [0.42], marker="v", color="#1A1D24", s=16, zorder=5)
+    ax.plot([v, v], [-0.4, 0.4], color="#1A1D24", linewidth=1.3, solid_capstyle="round")
+    ax.scatter([v], [0.42], marker="v", color="#1A1D24", s=10, zorder=5)
 
     ax.set_xlim(edges[0], edges[-1])
     ax.set_ylim(-0.5, 0.6)
     ax.set_yticks([])
     ax.set_xticks(edges)
-    ax.set_xticklabels([f"{e:g}" for e in edges], fontsize=5, color="#8A93A3")
+    ax.set_xticklabels([f"{e:g}" for e in edges], fontsize=4.2, color="#8A93A3")
     for spine in ax.spines.values():
         spine.set_visible(False)
-    ax.tick_params(length=0)
+    ax.tick_params(length=0, pad=1)
 
     fmt = config.get("fmt", "{:.2f}")
     unit = config.get("unit", "")
-    ax.set_title(f'{config["label"]} · {fmt.format(value)}{unit}', fontsize=6.8,
-                 color="#1A1D24", pad=2)
-    fig.tight_layout(pad=0.25)
+    ax.set_title(f'{fmt.format(value)}{unit}', fontsize=5.8,
+                 color="#1A1D24", pad=1.5)
+    fig.tight_layout(pad=0.12)
     return fig
 
 
@@ -1107,8 +1104,8 @@ def plot_library_map(library, figsize=(2.2, 2.2)):
         spine.set_color("#E5E7EB")
 
     cbar = fig.colorbar(sc, ax=ax, orientation="horizontal", location="bottom",
-                         shrink=0.9, pad=0.03)
-    cbar.set_label("Acousticness (어쿠스틱함)", fontsize=6.5, color="#6B7280", labelpad=2)
+                         shrink=0.9, pad=0.15)
+    cbar.set_label("Acousticness (어쿠스틱함)", fontsize=6.5, color="#6B7280", labelpad=3)
     cbar.ax.tick_params(labelsize=6, colors="#6B7280", pad=1)
 
     fig.tight_layout(pad=0.3)
@@ -1152,36 +1149,39 @@ def render_report(result):
         metric_card(METRIC_LABELS["duration"], format_duration(result["duration"]))
     with c2:
         metric_card(METRIC_LABELS["bpm"], f'{result["bpm"]:.1f}', sub=interpret_bpm(result["bpm"]))
+        st.pyplot(plot_range_gauge(result["bpm"], RANGE_METRIC_CONFIGS["bpm"]), use_container_width=False)
     with c3:
         metric_card(METRIC_LABELS["danceability"], f'{result["danceability"]:.2f}', sub=interpret_danceability(result["danceability"]), amber=True)
+        st.pyplot(plot_range_gauge(result["danceability"], RANGE_METRIC_CONFIGS["danceability"]), use_container_width=False)
     with c4:
         metric_card(METRIC_LABELS["dynamic_complexity"], f'{result["dynamic_complexity"]:.2f} dB', sub=interpret_dynamic_complexity(result["dynamic_complexity"]))
+        st.pyplot(plot_range_gauge(result["dynamic_complexity"], RANGE_METRIC_CONFIGS["dynamic_complexity"]), use_container_width=False)
     with c5:
         metric_card(METRIC_LABELS["loudness"], f'{result["loudness"]:.2f}', sub=interpret_loudness(result["loudness"]))
+        st.pyplot(plot_range_gauge(result["loudness"], RANGE_METRIC_CONFIGS["loudness"]), use_container_width=False)
 
     st.markdown('<div class="section-label">감성 / 속성 지표</div>', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         metric_card(METRIC_LABELS["acousticness"], f'{result["acousticness"]:.2f}', sub=interpret_acousticness(result["acousticness"]))
+        st.pyplot(plot_range_gauge(result["acousticness"], RANGE_METRIC_CONFIGS["acousticness"]), use_container_width=False)
     with c2:
         metric_card(METRIC_LABELS["energy"], f'{result["energy"]:.2f}', sub=interpret_energy(result["energy"]), amber=True)
+        st.pyplot(plot_range_gauge(result["energy"], RANGE_METRIC_CONFIGS["energy"]), use_container_width=False)
     with c3:
         metric_card(METRIC_LABELS["instrumentalness"], f'{result["instrumentalness"]:.2f}', sub=interpret_instrumentalness(result["instrumentalness"]))
     with c4:
         metric_card(METRIC_LABELS["valence"], f'{result["valence"]:.2f}', sub=interpret_valence(result["valence"]), amber=True)
+        st.pyplot(plot_range_gauge(result["valence"], RANGE_METRIC_CONFIGS["valence"]), use_container_width=False)
 
     st.markdown('<div class="section-label">음색 (Timbre)</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
         metric_card(METRIC_LABELS["spectral_centroid"], f'{result["spectral_centroid"]:.0f} Hz', sub=interpret_spectral_centroid(result["spectral_centroid"]))
+        st.pyplot(plot_range_gauge(result["spectral_centroid"], RANGE_METRIC_CONFIGS["spectral_centroid"]), use_container_width=False)
     with c2:
         metric_card(METRIC_LABELS["zcr"], f'{result["zcr"]:.4f}', sub=interpret_zcr(result["zcr"]))
-
-    st.markdown('<div class="section-label">항목별 구간 위치</div>', unsafe_allow_html=True)
-    gauge_cols = st.columns(3)
-    for i, key in enumerate(RANGE_GAUGE_ORDER):
-        with gauge_cols[i % 3]:
-            st.pyplot(plot_range_gauge(result[key], RANGE_METRIC_CONFIGS[key]), use_container_width=False)
+        st.pyplot(plot_range_gauge(result["zcr"], RANGE_METRIC_CONFIGS["zcr"]), use_container_width=False)
 
     st.markdown('<div class="section-label">장르 예측 TOP 5</div>', unsafe_allow_html=True)
     for label, prob in result["top_genres"]:
@@ -1216,8 +1216,8 @@ def render_lastfm_block(key_prefix, default_title, default_artist, api_key):
 # ============================================================
 # 탭 구성
 # ============================================================
-tab1, tab4, tab3 = st.tabs([
-    "🎧 단일 곡 분석", "📚 라이브러리 & 유사곡", "📖 해석 가이드"
+tab1, tab4, tab_map, tab3 = st.tabs([
+    "🎧 단일 곡 분석", "📚 라이브러리 & 유사곡", "🗺️ 라이브러리 지도", "📖 해석 가이드"
 ])
 
 with tab1:
@@ -1415,11 +1415,6 @@ with tab4:
     if not library:
         st.caption("아직 저장된 곡이 없어요. 단일 분석 탭에서 저장하거나 위에서 일괄 분석을 실행해보세요.")
     else:
-        if len(library) >= 2:
-            st.markdown('<div class="section-label">라이브러리 지도 (감성 분포 한눈에 보기)</div>', unsafe_allow_html=True)
-            st.caption("점의 위치 = Valence × Energy, 점 크기 = Danceability, 색 = Acousticness")
-            st.pyplot(plot_library_map(library), use_container_width=False)
-
         for entry in library:
             with st.expander(f"🎵 {entry['filename']}"):
                 left_col, right_col = st.columns([4, 1])
@@ -1486,3 +1481,14 @@ with tab4:
             if os.path.exists(LIBRARY_PATH):
                 os.remove(LIBRARY_PATH)
             st.rerun()
+
+with tab_map:
+    map_library = load_library()
+    if not map_library:
+        st.caption("아직 저장된 곡이 없어요. 단일 분석 탭에서 저장하거나 라이브러리 탭에서 일괄 분석을 실행해보세요.")
+    elif len(map_library) < 2:
+        st.caption("지도를 그리려면 라이브러리에 곡이 2개 이상 있어야 해요.")
+    else:
+        st.markdown('<div class="section-label">라이브러리 지도 (감성 분포 한눈에 보기)</div>', unsafe_allow_html=True)
+        st.caption("점의 위치 = Valence × Energy, 점 크기 = Danceability, 색 = Acousticness")
+        st.pyplot(plot_library_map(map_library), use_container_width=False)
