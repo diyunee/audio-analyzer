@@ -612,11 +612,19 @@ def cosine_similarity(vec_a, vec_b):
 
 
 def compute_combined_recommendations(selected, others, api_key, essentia_weight=0.6, lastfm_weight=0.4):
+    """Essentia 음향 유사도 + Last.fm 아티스트 연관도를 합산해 추천 점수를 계산.
+    Last.fm 쪽에서 실제 오류(네트워크/API 오류)가 발생하면 lastfm_ok=False로 표시하고,
+    그 경우에는 가중합을 쓰지 않고 Essentia 유사도만으로 combined_score를 계산한다."""
     selected_artist = (selected.get("artist") or "").strip()
     similar_artist_map = {}
+    lastfm_ok = False
+
     if api_key and selected_artist:
-        for a in get_similar_artists(selected_artist, api_key, limit=30):
-            similar_artist_map[a["name"].lower()] = a["match"]
+        similar = get_similar_artists(selected_artist, api_key, limit=30)
+        if similar is not None:
+            lastfm_ok = True
+            for a in similar:
+                similar_artist_map[a["name"].lower()] = a["match"]
 
     results = []
     for s in others:
@@ -624,13 +632,18 @@ def compute_combined_recommendations(selected, others, api_key, essentia_weight=
         other_artist = (s.get("artist") or "").strip()
 
         lastfm_score = 0.0
-        if other_artist:
+        if lastfm_ok and other_artist:
             if selected_artist and other_artist.lower() == selected_artist.lower():
                 lastfm_score = 1.0
             elif other_artist.lower() in similar_artist_map:
                 lastfm_score = similar_artist_map[other_artist.lower()]
 
-        combined = essentia_weight * essentia_score + lastfm_weight * lastfm_score
+        if lastfm_ok:
+            combined = essentia_weight * essentia_score + lastfm_weight * lastfm_score
+        else:
+            # Last.fm 연동이 실패한 경우: 가중치를 나누지 않고 Essentia 유사도를 그대로 최종 점수로 사용
+            combined = essentia_score
+
         results.append({
             "filename": s["filename"],
             "title": s.get("title") or s["filename"],
@@ -638,9 +651,10 @@ def compute_combined_recommendations(selected, others, api_key, essentia_weight=
             "essentia_score": essentia_score,
             "lastfm_score": lastfm_score,
             "combined_score": combined,
+            "lastfm_ok": lastfm_ok,
         })
     results.sort(key=lambda x: x["combined_score"], reverse=True)
-    return results
+    return results, lastfm_ok
 
 
 def build_recommend_reason(rec, selected_artist):
@@ -654,6 +668,10 @@ def build_recommend_reason(rec, selected_artist):
         parts.append("음향적 특징이 어느 정도 비슷한 곡")
     else:
         parts.append("음향적 특징은 다소 다른 곡")
+
+    if not rec.get("lastfm_ok", False):
+        # Last.fm 연동이 실패한 경우에는 아티스트 연관도 언급 없이 Essentia 기준 이유만 표시
+        return parts[0]
 
     ls_score = rec["lastfm_score"]
     if selected_artist and rec["artist"] and rec["artist"].lower() == selected_artist.lower():
@@ -701,7 +719,11 @@ def resolve_title_artist(filename, path):
 # ============================================================
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
 def get_similar_artists(artist_name, api_key, limit=6):
-    """Last.fm artist.getSimilar 호출. [{name, match, url}, ...] 반환."""
+    """Last.fm artist.getSimilar 호출. [{name, match, url}, ...] 반환.
+    - 실제 네트워크/API 오류(타임아웃, 잘못된 키, 레이트리밋 등)가 발생하면 None을 반환.
+    - '해당 이름의 아티스트를 찾을 수 없음'(Last.fm 에러코드 6)처럼 정상적으로 결과가
+      없는 경우에는 빈 리스트를 반환. 두 상황을 구분해야 상위 로직에서
+      '오류라서 못 가져온 것'과 '그냥 결과가 없는 것'을 다르게 처리할 수 있음."""
     if not artist_name or not api_key:
         return []
     url = "https://ws.audioscrobbler.com/2.0/"
@@ -717,7 +739,9 @@ def get_similar_artists(artist_name, api_key, limit=6):
         resp = requests.get(url, params=params, timeout=8)
         data = resp.json()
         if "error" in data:
-            return []
+            if data.get("error") == 6:  # 해당 이름의 아티스트 없음 (정상적인 빈 결과)
+                return []
+            return None
         artists = data.get("similarartists", {}).get("artist", [])
         result = []
         for a in artists:
@@ -728,12 +752,13 @@ def get_similar_artists(artist_name, api_key, limit=6):
             })
         return result
     except Exception:
-        return []
+        return None
 
 
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
 def get_artist_top_albums(artist_name, api_key, limit=3):
     """Last.fm artist.getTopAlbums 호출. [{name, artist, url, playcount}, ...] 반환.
+    get_similar_artists와 동일한 규칙으로 오류(None) / 정상 빈 결과([])를 구분한다.
     (앨범 단위 getSimilar API가 없어서, 유사 아티스트의 대표 앨범을 유사 앨범 후보로 사용)"""
     if not artist_name or not api_key:
         return []
@@ -750,7 +775,9 @@ def get_artist_top_albums(artist_name, api_key, limit=3):
         resp = requests.get(url, params=params, timeout=8)
         data = resp.json()
         if "error" in data:
-            return []
+            if data.get("error") == 6:
+                return []
+            return None
         albums = data.get("topalbums", {}).get("album", [])
         result = []
         for alb in albums:
@@ -765,23 +792,28 @@ def get_artist_top_albums(artist_name, api_key, limit=3):
             })
         return result
     except Exception:
-        return []
+        return None
 
 
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
 def get_similar_albums(artist_name, api_key, limit=6):
     """유사 아티스트들의 대표 앨범을 모아 '유사 앨범' 후보 목록을 만듦.
     각 앨범은 원 아티스트와의 Last.fm 유사도(match)를 그대로 이어받음.
-    반환: [{album, artist, match, url}, ...] match 내림차순."""
+    유사 아티스트 조회 자체가 오류(None)면 그대로 None을 반환해 오류 상태를 전달한다.
+    반환: [{album, artist, match, url}, ...] match 내림차순, 오류 시 None."""
     if not artist_name or not api_key:
         return []
     similar_artists = get_similar_artists(artist_name, api_key, limit=limit)
+    if similar_artists is None:
+        return None
     if not similar_artists:
         return []
 
     results = []
     for a in similar_artists:
         top_albums = get_artist_top_albums(a["name"], api_key, limit=1)
+        if top_albums is None:
+            continue
         for alb in top_albums:
             results.append({
                 "album": alb["name"],
@@ -801,6 +833,9 @@ def render_similar_artists(artist_name, api_key, limit=6):
         st.caption("아티스트 이름을 입력하면 유사 아티스트를 찾아드려요.")
         return
     similar = get_similar_artists(artist_name, api_key, limit=limit)
+    if similar is None:
+        st.caption("⚠️ Last.fm 연결에 문제가 있어 유사 아티스트를 불러오지 못했어요.")
+        return
     if not similar:
         st.caption(f"'{artist_name}'에 대한 유사 아티스트 정보를 찾을 수 없어요.")
         return
@@ -823,6 +858,9 @@ def render_similar_albums(artist_name, api_key, limit=6):
         st.caption("아티스트 이름을 입력하면 유사 앨범을 찾아드려요.")
         return
     albums = get_similar_albums(artist_name, api_key, limit=limit)
+    if albums is None:
+        st.caption("⚠️ Last.fm 연결에 문제가 있어 유사 앨범을 불러오지 못했어요.")
+        return
     if not albums:
         st.caption(f"'{artist_name}'과(와) 유사한 아티스트의 앨범 정보를 찾을 수 없어요.")
         return
@@ -902,7 +940,7 @@ def delete_from_library(filename):
 
 
 # ============================================================
-# 시각화 (레이더 차트 / 막대그래프 / 2D 지도)
+# 시각화 (레이더 차트 / 항목별 구간 그래프 / 2D 지도)
 # ============================================================
 def plot_radar(result, title="", figsize=(2.8, 2.8)):
     labels = [
@@ -939,45 +977,105 @@ def plot_radar(result, title="", figsize=(2.8, 2.8)):
     return fig
 
 
-def plot_metric_bars(result, figsize=(3.4, 2.6)):
-    """분석 결과 수치들을 한눈에 비교할 수 있는 정규화 막대그래프(0~1 스케일). (BPM 제외)"""
-    bar_defs = [
-        ("Danceability", min(result["danceability"] / 1.5, 1.0)),
-        ("Loudness", min(result["loudness"], 1.0)),
-        ("Dynamic Complexity", min(result["dynamic_complexity"] / 8, 1.0)),
-        ("Acousticness", result["acousticness"]),
-        ("Energy", result["energy"]),
-        ("Instrumentalness", result["instrumentalness"]),
-        ("Valence", result["valence"]),
-    ]
-    names = [b[0] for b in bar_defs][::-1]
-    values = [b[1] for b in bar_defs][::-1]
-    colors = ["#1F8F7B" if v < 0.7 else "#E08A2E" for v in values]
+# 각 지표별로 해석 가이드 탭의 구간 경계값을 그대로 사용한 설정.
+# breakpoints의 길이 + 1 = band_labels 개수가 되어야 함.
+RANGE_METRIC_CONFIGS = {
+    "bpm": {
+        "label": "BPM", "breakpoints": [75, 95, 115, 130], "vmax": 200,
+        "band_labels": ["매우느림", "느긋함", "보통", "업비트", "빠름"],
+        "fmt": "{:.1f}", "unit": "",
+    },
+    "danceability": {
+        "label": "Danceability", "breakpoints": [0.5, 1.0, 1.5], "vmax": 2.0,
+        "band_labels": ["불규칙", "보통", "규칙적", "매우규칙"],
+        "fmt": "{:.2f}", "unit": "",
+    },
+    "loudness": {
+        "label": "Loudness", "breakpoints": [0.3, 0.6], "vmax": 1.0,
+        "band_labels": ["조용함", "보통", "강하게"],
+        "fmt": "{:.2f}", "unit": "",
+    },
+    "dynamic_complexity": {
+        "label": "Dynamic Complexity", "breakpoints": [3, 6], "vmax": 10,
+        "band_labels": ["좁음", "보통", "넓음"],
+        "fmt": "{:.2f}", "unit": " dB",
+    },
+    "spectral_centroid": {
+        "label": "Spectral Centroid", "breakpoints": [1000, 2000, 3500], "vmax": 6000,
+        "band_labels": ["어두움", "중간", "밝은편", "매우밝음"],
+        "fmt": "{:.0f}", "unit": " Hz",
+    },
+    "zcr": {
+        "label": "Zero Crossing Rate", "breakpoints": [0.05, 0.1], "vmax": 0.2,
+        "band_labels": ["부드러움", "혼합", "강함"],
+        "fmt": "{:.4f}", "unit": "",
+    },
+    "acousticness": {
+        "label": "Acousticness", "breakpoints": [0.3, 0.6], "vmax": 1.0,
+        "band_labels": ["전자적", "혼합", "어쿠스틱"],
+        "fmt": "{:.2f}", "unit": "",
+    },
+    "energy": {
+        "label": "Energy", "breakpoints": [0.3, 0.6], "vmax": 1.0,
+        "band_labels": ["차분함", "보통", "강렬함"],
+        "fmt": "{:.2f}", "unit": "",
+    },
+    "valence": {
+        "label": "Valence", "breakpoints": [0.3, 0.6], "vmax": 1.0,
+        "band_labels": ["우울함", "중립", "긍정적"],
+        "fmt": "{:.2f}", "unit": "",
+    },
+}
+# instrumentalness는 요청에 따라 항목별 구간 그래프에서 제외
+RANGE_GAUGE_ORDER = [
+    "bpm", "danceability", "loudness", "dynamic_complexity",
+    "spectral_centroid", "zcr", "acousticness", "energy", "valence",
+]
+
+
+def plot_range_gauge(value, config, figsize=(2.3, 0.95)):
+    """지표 하나의 값이 해석 가이드 상 어느 구간에 속하는지 보여주는 작은 구간 막대.
+    구간 경계선(breakpoints)을 색 블록으로 나누고, 실제 값 위치를 세모/막대로 표시."""
+    breakpoints = config["breakpoints"]
+    vmax = config["vmax"]
+    n_bands = len(config["band_labels"])
+    edges = [0.0] + list(breakpoints) + [vmax]
+    band_colors = ["#CFE8E2", "#8FCBB9", "#1F8F7B", "#146B5C", "#0B3A31"][:n_bands]
 
     fig, ax = plt.subplots(figsize=figsize)
     fig.patch.set_facecolor("white")
-    ax.set_facecolor("#FFFFFF")
-    y_pos = np.arange(len(names))
-    ax.barh(y_pos, values, color=colors, height=0.55)
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(names, fontsize=6.5, color="#1A1D24")
-    ax.set_xlim(0, 1.0)
-    ax.set_xlabel("정규화된 값 (0~1)", fontsize=6.5, color="#6B7280")
-    ax.tick_params(axis='x', labelsize=6.5, colors="#6B7280")
-    for spine in ["top", "right"]:
-        ax.spines[spine].set_visible(False)
-    for spine in ["left", "bottom"]:
-        ax.spines[spine].set_color("#E5E7EB")
-    for i, v in enumerate(values):
-        ax.text(v + 0.02, i, f"{v:.2f}", va="center", fontsize=6.5, color="#1A1D24")
-    fig.tight_layout()
+    ax.set_facecolor("white")
+
+    for i in range(n_bands):
+        ax.barh(0, edges[i + 1] - edges[i], left=edges[i], height=0.55,
+                color=band_colors[i], edgecolor="white", linewidth=0.8)
+
+    v = min(max(value, edges[0]), edges[-1])
+    ax.plot([v, v], [-0.4, 0.4], color="#1A1D24", linewidth=1.8, solid_capstyle="round")
+    ax.scatter([v], [0.42], marker="v", color="#1A1D24", s=16, zorder=5)
+
+    ax.set_xlim(edges[0], edges[-1])
+    ax.set_ylim(-0.5, 0.6)
+    ax.set_yticks([])
+    ax.set_xticks(edges)
+    ax.set_xticklabels([f"{e:g}" for e in edges], fontsize=5, color="#8A93A3")
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.tick_params(length=0)
+
+    fmt = config.get("fmt", "{:.2f}")
+    unit = config.get("unit", "")
+    ax.set_title(f'{config["label"]} · {fmt.format(value)}{unit}', fontsize=6.8,
+                 color="#1A1D24", pad=2)
+    fig.tight_layout(pad=0.25)
     return fig
 
 
-def plot_library_map(library, figsize=(3.2, 3.2)):
+def plot_library_map(library, figsize=(2.2, 2.2)):
     """라이브러리 전체 곡을 Valence(x) x Energy(y) 평면에 흩뿌려 한눈에 보여주는 2D 지도.
     무드 배너와 같은 정서 원형모델(circumplex) 좌표계를 사용.
-    (감성 프로필 오각형 그래프와 비슷한 크기로 축소, Acousticness는 하단 가로 컬러바로 표시)"""
+    (감성 프로필 오각형 그래프보다 더 작게 축소, Acousticness는 하단 가로 컬러바로 표시하고
+    지도와 컬러바 사이 여백은 거의 없도록 pad를 최소화함)"""
     fig, ax = plt.subplots(figsize=figsize)
     fig.patch.set_facecolor("white")
     ax.set_facecolor("#F7F8FA")
@@ -1009,11 +1107,11 @@ def plot_library_map(library, figsize=(3.2, 3.2)):
         spine.set_color("#E5E7EB")
 
     cbar = fig.colorbar(sc, ax=ax, orientation="horizontal", location="bottom",
-                         shrink=0.9, pad=0.28)
-    cbar.set_label("Acousticness (어쿠스틱함)", fontsize=6.5, color="#6B7280")
-    cbar.ax.tick_params(labelsize=6, colors="#6B7280")
+                         shrink=0.9, pad=0.03)
+    cbar.set_label("Acousticness (어쿠스틱함)", fontsize=6.5, color="#6B7280", labelpad=2)
+    cbar.ax.tick_params(labelsize=6, colors="#6B7280", pad=1)
 
-    fig.tight_layout()
+    fig.tight_layout(pad=0.3)
     return fig
 
 
@@ -1079,8 +1177,11 @@ def render_report(result):
     with c2:
         metric_card(METRIC_LABELS["zcr"], f'{result["zcr"]:.4f}', sub=interpret_zcr(result["zcr"]))
 
-    st.markdown('<div class="section-label">수치 한눈에 보기 (막대그래프)</div>', unsafe_allow_html=True)
-    st.pyplot(plot_metric_bars(result), use_container_width=False)
+    st.markdown('<div class="section-label">항목별 구간 위치</div>', unsafe_allow_html=True)
+    gauge_cols = st.columns(3)
+    for i, key in enumerate(RANGE_GAUGE_ORDER):
+        with gauge_cols[i % 3]:
+            st.pyplot(plot_range_gauge(result[key], RANGE_METRIC_CONFIGS[key]), use_container_width=False)
 
     st.markdown('<div class="section-label">장르 예측 TOP 5</div>', unsafe_allow_html=True)
     for label, prob in result["top_genres"]:
@@ -1355,17 +1456,26 @@ with tab4:
 
         others = [s for s in library if s["filename"] != selected_name]
         if others:
-            recs = compute_combined_recommendations(selected, others, LASTFM_API_KEY)
+            recs, lastfm_ok = compute_combined_recommendations(selected, others, LASTFM_API_KEY)
             selected_artist = (selected.get("artist") or "").strip()
-            st.caption("Essentia 음향 유사도(60%) + Last.fm 아티스트 연관도(40%)를 합산한 최종 추천 점수예요.")
+            if lastfm_ok:
+                st.caption("Essentia 음향 유사도(60%) + Last.fm 아티스트 연관도(40%)를 합산한 최종 추천 점수예요.")
+            else:
+                st.caption("⚠️ Last.fm 연결에 문제가 있어 Essentia 음향 유사도만으로 계산한 추천 점수예요.")
             for rec in recs[:3]:
                 reason = build_recommend_reason(rec, selected_artist)
                 display_name = f'{rec["title"]}' + (f' — {rec["artist"]}' if rec["artist"] else "")
+                if rec["lastfm_ok"]:
+                    score_label = "종합 추천 점수"
+                    sub_line = f"Essentia 유사도 {rec['essentia_score']*100:.1f}% · Last.fm 연관도 {rec['lastfm_score']*100:.1f}%"
+                else:
+                    score_label = "추천 점수 (Essentia 기준)"
+                    sub_line = f"Essentia 유사도 {rec['essentia_score']*100:.1f}%"
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-label">{display_name}</div>
-                    <div class="metric-value recommend-score">종합 추천 점수 {rec['combined_score']*100:.1f}%</div>
-                    <div class="metric-sub">Essentia 유사도 {rec['essentia_score']*100:.1f}% · Last.fm 연관도 {rec['lastfm_score']*100:.1f}%</div>
+                    <div class="metric-value recommend-score">{score_label} {rec['combined_score']*100:.1f}%</div>
+                    <div class="metric-sub">{sub_line}</div>
                     <div class="metric-sub">💬 추천 이유: {reason}</div>
                 </div>
                 """, unsafe_allow_html=True)
