@@ -88,6 +88,8 @@ div[data-testid="stHorizontalBlock"] { gap: 0.8rem; }
     padding: 12px 14px;
     margin-bottom: 12px;
     min-height: 84px;
+    width: 190px;
+    box-sizing: border-box;
 }
 .metric-label {
     font-size: 0.66rem;
@@ -1056,6 +1058,10 @@ def plot_range_gauge(value, config, figsize=(1.9, 0.62)):
     ax.set_yticks([])
     ax.set_xticks(edges)
     ax.set_xticklabels([f"{e:g}" for e in edges], fontsize=4.2, color="#8A93A3")
+    tick_labels = ax.get_xticklabels()
+    if tick_labels:
+        tick_labels[0].set_ha("left")
+        tick_labels[-1].set_ha("right")
     for spine in ax.spines.values():
         spine.set_visible(False)
     ax.tick_params(length=0, pad=1)
@@ -1064,15 +1070,17 @@ def plot_range_gauge(value, config, figsize=(1.9, 0.62)):
     unit = config.get("unit", "")
     ax.set_title(f'{fmt.format(value)}{unit}', fontsize=5.8,
                  color="#1A1D24", pad=1.5)
-    fig.tight_layout(pad=0.12)
+    # tight_layout 대신 고정 마진을 써서, 라벨 글자 수가 달라도 막대(축 영역)의
+    # 실제 폭이 모든 항목에서 동일하게 렌더링되도록 함
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.62, bottom=0.34)
     return fig
 
 
-def plot_library_map(library, figsize=(2.2, 2.2)):
+def plot_library_map(library, figsize=(6.0, 6.0)):
     """라이브러리 전체 곡을 Valence(x) x Energy(y) 평면에 흩뿌려 한눈에 보여주는 2D 지도.
     무드 배너와 같은 정서 원형모델(circumplex) 좌표계를 사용.
-    (감성 프로필 오각형 그래프보다 더 작게 축소, Acousticness는 하단 가로 컬러바로 표시하고
-    지도와 컬러바 사이 여백은 거의 없도록 pad를 최소화함)"""
+    전용 탭에 크게 보여줄 것이므로 넉넉한 크기로 그리고, Acousticness는 하단 가로
+    컬러바로 표시하며 라벨은 눈금 숫자와 겹치지 않도록 아래쪽으로 충분히 띄운다."""
     fig, ax = plt.subplots(figsize=figsize)
     fig.patch.set_facecolor("white")
     ax.set_facecolor("#F7F8FA")
@@ -1082,33 +1090,33 @@ def plot_library_map(library, figsize=(2.2, 2.2)):
 
     xs = [s["valence"] for s in library]
     ys = [s["energy"] for s in library]
-    sizes = [30 + min(s.get("danceability", 1.0), 1.5) * 30 for s in library]
+    sizes = [60 + min(s.get("danceability", 1.0), 1.5) * 60 for s in library]
     colors = [s.get("acousticness", 0.5) for s in library]
 
     sc = ax.scatter(xs, ys, s=sizes, c=colors, cmap="Blues", edgecolors="#1A1D24",
-                     linewidths=0.5, alpha=0.9, vmin=0, vmax=1)
+                     linewidths=0.8, alpha=0.9, vmin=0, vmax=1)
 
     for s in library:
         label = s.get("title") or s["filename"]
-        if len(label) > 10:
-            label = label[:9] + "…"
-        ax.annotate(label, (s["valence"], s["energy"]), fontsize=5.5, color="#1A1D24",
-                    xytext=(4, 4), textcoords="offset points")
+        if len(label) > 14:
+            label = label[:13] + "…"
+        ax.annotate(label, (s["valence"], s["energy"]), fontsize=8, color="#1A1D24",
+                    xytext=(6, 6), textcoords="offset points")
 
     ax.set_xlim(-0.05, 1.05)
     ax.set_ylim(-0.05, 1.05)
-    ax.set_xlabel("Valence (긍정정서) →", fontsize=6.5, color="#374151")
-    ax.set_ylabel("Energy (에너지) →", fontsize=6.5, color="#374151")
-    ax.tick_params(labelsize=6, colors="#6B7280")
+    ax.set_xlabel("Valence (긍정정서) →", fontsize=9.5, color="#374151")
+    ax.set_ylabel("Energy (에너지) →", fontsize=9.5, color="#374151")
+    ax.tick_params(labelsize=8, colors="#6B7280")
     for spine in ax.spines.values():
         spine.set_color("#E5E7EB")
 
     cbar = fig.colorbar(sc, ax=ax, orientation="horizontal", location="bottom",
-                         shrink=0.9, pad=0.15)
-    cbar.set_label("Acousticness (어쿠스틱함)", fontsize=6.5, color="#6B7280", labelpad=3)
-    cbar.ax.tick_params(labelsize=6, colors="#6B7280", pad=1)
+                         shrink=0.9, pad=0.16)
+    cbar.ax.tick_params(labelsize=8, colors="#6B7280", pad=4)
+    cbar.set_label("Acousticness (어쿠스틱함)", fontsize=9.5, color="#6B7280", labelpad=10)
 
-    fig.tight_layout(pad=0.3)
+    fig.tight_layout(pad=0.6)
     return fig
 
 
