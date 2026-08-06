@@ -1,5 +1,8 @@
 streamlit
-essentia-tensorflow
 numpy
 pandas
+requests
 matplotlib
+plotly
+essentia-tensorflow
+mutagen
