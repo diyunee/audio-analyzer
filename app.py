@@ -88,8 +88,11 @@ div[data-testid="stHorizontalBlock"] { gap: 0.8rem; }
     padding: 12px 14px;
     margin-bottom: 12px;
     min-height: 84px;
-    width: 190px;
+    width: 100%;
     box-sizing: border-box;
+}
+.metric-card.recommend-card {
+    width: 190px;
 }
 .metric-label {
     font-size: 0.66rem;
@@ -1027,8 +1030,12 @@ RANGE_METRIC_CONFIGS = {
         "band_labels": ["우울함", "중립", "긍정적"],
         "fmt": "{:.2f}", "unit": "",
     },
+    "instrumentalness": {
+        "label": "Instrumentalness", "breakpoints": [0.3, 0.6], "vmax": 1.0,
+        "band_labels": ["보컬있음", "혼합", "연주곡"],
+        "fmt": "{:.2f}", "unit": "",
+    },
 }
-# instrumentalness는 요청에 따라 구간 그래프에서 제외
 
 
 def plot_range_gauge(value, config, figsize=(1.9, 0.62)):
@@ -1041,7 +1048,7 @@ def plot_range_gauge(value, config, figsize=(1.9, 0.62)):
     edges = [0.0] + list(breakpoints) + [vmax]
     band_colors = ["#CFE8E2", "#8FCBB9", "#1F8F7B", "#146B5C", "#0B3A31"][:n_bands]
 
-    fig, ax = plt.subplots(figsize=figsize)
+    fig, ax = plt.subplots(figsize=figsize, dpi=150)
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
 
@@ -1152,50 +1159,43 @@ def render_mood_banner(result):
 def render_report(result):
     render_mood_banner(result)
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
-        metric_card(METRIC_LABELS["duration"], format_duration(result["duration"]))
-    with c2:
         metric_card(METRIC_LABELS["bpm"], f'{result["bpm"]:.1f}', sub=interpret_bpm(result["bpm"]))
-        st.pyplot(plot_range_gauge(result["bpm"], RANGE_METRIC_CONFIGS["bpm"]), use_container_width=False)
-    with c3:
+        st.pyplot(plot_range_gauge(result["bpm"], RANGE_METRIC_CONFIGS["bpm"]), use_container_width=True)
+    with c2:
         metric_card(METRIC_LABELS["danceability"], f'{result["danceability"]:.2f}', sub=interpret_danceability(result["danceability"]), amber=True)
-        st.pyplot(plot_range_gauge(result["danceability"], RANGE_METRIC_CONFIGS["danceability"]), use_container_width=False)
-    with c4:
+        st.pyplot(plot_range_gauge(result["danceability"], RANGE_METRIC_CONFIGS["danceability"]), use_container_width=True)
+    with c3:
         metric_card(METRIC_LABELS["dynamic_complexity"], f'{result["dynamic_complexity"]:.2f} dB', sub=interpret_dynamic_complexity(result["dynamic_complexity"]))
-        st.pyplot(plot_range_gauge(result["dynamic_complexity"], RANGE_METRIC_CONFIGS["dynamic_complexity"]), use_container_width=False)
-    with c5:
+        st.pyplot(plot_range_gauge(result["dynamic_complexity"], RANGE_METRIC_CONFIGS["dynamic_complexity"]), use_container_width=True)
+    with c4:
         metric_card(METRIC_LABELS["loudness"], f'{result["loudness"]:.2f}', sub=interpret_loudness(result["loudness"]))
-        st.pyplot(plot_range_gauge(result["loudness"], RANGE_METRIC_CONFIGS["loudness"]), use_container_width=False)
+        st.pyplot(plot_range_gauge(result["loudness"], RANGE_METRIC_CONFIGS["loudness"]), use_container_width=True)
 
     st.markdown('<div class="section-label">감성 / 속성 지표</div>', unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         metric_card(METRIC_LABELS["acousticness"], f'{result["acousticness"]:.2f}', sub=interpret_acousticness(result["acousticness"]))
-        st.pyplot(plot_range_gauge(result["acousticness"], RANGE_METRIC_CONFIGS["acousticness"]), use_container_width=False)
+        st.pyplot(plot_range_gauge(result["acousticness"], RANGE_METRIC_CONFIGS["acousticness"]), use_container_width=True)
     with c2:
         metric_card(METRIC_LABELS["energy"], f'{result["energy"]:.2f}', sub=interpret_energy(result["energy"]), amber=True)
-        st.pyplot(plot_range_gauge(result["energy"], RANGE_METRIC_CONFIGS["energy"]), use_container_width=False)
+        st.pyplot(plot_range_gauge(result["energy"], RANGE_METRIC_CONFIGS["energy"]), use_container_width=True)
     with c3:
         metric_card(METRIC_LABELS["instrumentalness"], f'{result["instrumentalness"]:.2f}', sub=interpret_instrumentalness(result["instrumentalness"]))
+        st.pyplot(plot_range_gauge(result["instrumentalness"], RANGE_METRIC_CONFIGS["instrumentalness"]), use_container_width=True)
     with c4:
         metric_card(METRIC_LABELS["valence"], f'{result["valence"]:.2f}', sub=interpret_valence(result["valence"]), amber=True)
-        st.pyplot(plot_range_gauge(result["valence"], RANGE_METRIC_CONFIGS["valence"]), use_container_width=False)
+        st.pyplot(plot_range_gauge(result["valence"], RANGE_METRIC_CONFIGS["valence"]), use_container_width=True)
 
     st.markdown('<div class="section-label">음색 (Timbre)</div>', unsafe_allow_html=True)
-    c1, c2 = st.columns(2)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         metric_card(METRIC_LABELS["spectral_centroid"], f'{result["spectral_centroid"]:.0f} Hz', sub=interpret_spectral_centroid(result["spectral_centroid"]))
-        st.pyplot(plot_range_gauge(result["spectral_centroid"], RANGE_METRIC_CONFIGS["spectral_centroid"]), use_container_width=False)
+        st.pyplot(plot_range_gauge(result["spectral_centroid"], RANGE_METRIC_CONFIGS["spectral_centroid"]), use_container_width=True)
     with c2:
         metric_card(METRIC_LABELS["zcr"], f'{result["zcr"]:.4f}', sub=interpret_zcr(result["zcr"]))
-        st.pyplot(plot_range_gauge(result["zcr"], RANGE_METRIC_CONFIGS["zcr"]), use_container_width=False)
-
-    st.markdown('<div class="section-label">장르 예측 TOP 5</div>', unsafe_allow_html=True)
-    for label, prob in result["top_genres"]:
-        st.markdown(f"""
-        <div class="genre-row"><span>{label}</span><span>{prob*100:.1f}%</span></div>
-        """, unsafe_allow_html=True)
+        st.pyplot(plot_range_gauge(result["zcr"], RANGE_METRIC_CONFIGS["zcr"]), use_container_width=True)
 
 
 def render_lastfm_block(key_prefix, default_title, default_artist, api_key):
@@ -1475,7 +1475,7 @@ with tab4:
                     score_label = "추천 점수 (Essentia 기준)"
                     sub_line = f"Essentia 유사도 {rec['essentia_score']*100:.1f}%"
                 st.markdown(f"""
-                <div class="metric-card">
+                <div class="metric-card recommend-card">
                     <div class="metric-label">{display_name}</div>
                     <div class="metric-value recommend-score">{score_label} {rec['combined_score']*100:.1f}%</div>
                     <div class="metric-sub">{sub_line}</div>
