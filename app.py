@@ -28,8 +28,8 @@ html, body, [class*="css"]  { font-family: 'Manrope', sans-serif; }
 }
 
 .main .block-container { padding-top: 1.5rem; padding-bottom: 1.5rem; }
-div[data-testid="stVerticalBlock"] { gap: 0.3rem; }
-div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
+div[data-testid="stVerticalBlock"] { gap: 0.6rem; }
+div[data-testid="stHorizontalBlock"] { gap: 0.8rem; }
 
 .hero-title {
     font-family: 'Space Mono', monospace;
@@ -56,64 +56,69 @@ div[data-testid="stHorizontalBlock"] { gap: 0.4rem; }
 .metric-card {
     background: #F7F8FA;
     border: 1px solid #E5E7EB;
-    border-radius: 8px;
-    padding: 6px 10px;
-    margin-bottom: 4px;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    min-height: 84px;
 }
 .metric-label {
-    font-size: 0.62rem;
+    font-size: 0.66rem;
     color: #6B7280;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
 }
 .metric-value {
     font-family: 'Space Mono', monospace;
-    font-size: 0.98rem;
+    font-size: 1.05rem;
     color: #1F8F7B;
     font-weight: 700;
-    line-height: 1.15;
+    line-height: 1.2;
 }
 .metric-value.amber { color: #B96E1C; }
-.metric-sub { color: #8A93A3; font-size: 0.62rem; margin-top: 1px; line-height: 1.15; }
+.metric-value.recommend-score {
+    font-size: 1.7rem;
+    line-height: 1.3;
+}
+.metric-sub { color: #8A93A3; font-size: 0.68rem; margin-top: 3px; line-height: 1.35; }
 
 .mood-card {
     background: #EFF7F5;
     border: 1px solid #1F8F7B;
-    border-radius: 8px;
-    padding: 8px 12px;
-    margin-bottom: 8px;
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
 }
 .mood-label {
-    font-size: 0.62rem;
+    font-size: 0.66rem;
     color: #146B5C;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
 }
 .mood-value {
     font-family: 'Space Mono', monospace;
-    font-size: 1.15rem;
+    font-size: 1.2rem;
     color: #146B5C;
     font-weight: 700;
 }
-.mood-desc { color: #4B7A70; font-size: 0.72rem; margin-top: 2px; }
+.mood-desc { color: #4B7A70; font-size: 0.78rem; margin-top: 4px; }
 
 .section-label {
     font-family: 'Space Mono', monospace;
     color: #B96E1C;
-    font-size: 0.78rem;
+    font-size: 0.82rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    margin: 12px 0 4px 0;
+    margin: 20px 0 10px 0;
     border-bottom: 1px solid #E5E7EB;
-    padding-bottom: 3px;
+    padding-bottom: 5px;
 }
 
 .genre-row {
     display:flex; justify-content: space-between;
     font-family: 'Space Mono', monospace;
-    padding: 6px 0; border-bottom: 1px dashed #E5E7EB;
+    padding: 8px 2px; border-bottom: 1px dashed #E5E7EB;
     font-size: 0.9rem;
     color: #1A1D24;
 }
@@ -371,12 +376,7 @@ METRIC_LABELS = {
 # ============================================================
 # 무드 자동 생성 (Essentia feature 기반 규칙 분류)
 # ============================================================
-# valence(정서 긍정성) x energy(각성도)를 정서 원형모델(Russell's circumplex model)의
-# 2차원 평면(-1~1)에 놓고, 8방향(45도 간격) + 중심(무자극) 총 9개 기본 무드 중
-# 가장 가까운 방향을 고른 뒤, 원점으로부터의 거리(감정 강도)로 3단계 강도를 매기고,
-# acousticness/danceability/instrumentalness로 세부 태그를 덧붙여 조합 수를 늘린다.
 MOOD_ANCHORS = [
-    # (각도, 기본 단어, 설명)
     (0,   "따뜻한",     "포근하고 안정적인 긍정의 정서예요"),
     (45,  "신나는",     "밝고 들뜬 에너지가 느껴져요"),
     (90,  "긴장감 있는", "각성되고 팽팽한 긴장감이 느껴져요"),
@@ -395,11 +395,9 @@ def _angle_diff(a, b):
 
 
 def determine_mood(result):
-    """valence/energy 좌표로 기본 무드(방향)와 강도(거리)를 정하고,
-    acousticness/danceability/instrumentalness로 세부 태그를 덧붙인다."""
-    vx = 2 * result["valence"] - 1   # -1(부정) ~ 1(긍정)
-    ey = 2 * result["energy"] - 1    # -1(저각성) ~ 1(고각성)
-    radius = float(np.hypot(vx, ey))  # 원점(무자극/중립)으로부터의 거리, 0~약1.41
+    vx = 2 * result["valence"] - 1
+    ey = 2 * result["energy"] - 1
+    radius = float(np.hypot(vx, ey))
 
     if radius < 0.15:
         mood_label = f"{MOOD_CENTER[0]} 무드"
@@ -534,21 +532,17 @@ def analyze_audio(file_bytes, filename):
 
     embeddings = get_embedding_model()(audio_16k)
 
-    # 장르
     genre_pred = np.mean(get_genre_model()(embeddings), axis=0)
     genre_labels = get_genre_labels()
 
-    # acousticness
     acoustic_pred = np.mean(get_acoustic_model()(embeddings), axis=0)
     acoustic_labels = get_acoustic_labels()
     acousticness = float(acoustic_pred[acoustic_labels.index("acoustic")])
 
-    # instrumentalness
     voice_pred = np.mean(get_voice_model()(embeddings), axis=0)
     voice_labels = get_voice_labels()
     instrumentalness = float(voice_pred[voice_labels.index("instrumental")])
 
-    # valence / energy (musicnn 임베딩 별도 사용)
     musicnn_embeddings = get_musicnn_embedding_model()(audio_16k)
     emomusic_pred = np.mean(get_emomusic_model()(musicnn_embeddings), axis=0)
     emomusic_labels = get_emomusic_labels()
@@ -590,8 +584,6 @@ def cosine_similarity(vec_a, vec_b):
 
 
 def compute_combined_recommendations(selected, others, api_key, essentia_weight=0.6, lastfm_weight=0.4):
-    """Essentia 임베딩 유사도(음향적 특징)와 Last.fm 아티스트 연관도(청취 데이터 기반)를
-    가중합해 최종 추천 점수를 계산."""
     selected_artist = (selected.get("artist") or "").strip()
     similar_artist_map = {}
     if api_key and selected_artist:
@@ -624,7 +616,6 @@ def compute_combined_recommendations(selected, others, api_key, essentia_weight=
 
 
 def build_recommend_reason(rec, selected_artist):
-    """추천 근거를 사람이 읽을 수 있는 한 줄 설명으로 변환."""
     parts = []
     es_score = rec["essentia_score"]
     if es_score >= 0.85:
@@ -651,7 +642,6 @@ def build_recommend_reason(rec, selected_artist):
 # 파일명 / 태그에서 제목·아티스트 추출
 # ============================================================
 def parse_filename_title_artist(filename):
-    """'제목_아티스트.mp3' 형식의 파일명을 파싱. 언더스코어 없으면 제목만 반환."""
     name = os.path.splitext(filename)[0]
     if "_" in name:
         title, artist = name.split("_", 1)
@@ -660,7 +650,6 @@ def parse_filename_title_artist(filename):
 
 
 def extract_audio_tags(path):
-    """오디오 파일의 ID3 등 태그에서 제목/아티스트 추출. 실패 시 빈 문자열."""
     try:
         from mutagen import File as MutagenFile
         audio = MutagenFile(path, easy=True)
@@ -672,7 +661,6 @@ def extract_audio_tags(path):
 
 
 def resolve_title_artist(filename, path):
-    """파일명 파싱을 우선으로 하고, 정보가 없는 부분만 ID3 태그로 보완."""
     name_title, name_artist = parse_filename_title_artist(filename)
     tag_title, tag_artist = extract_audio_tags(path) if path else ("", "")
     title = name_title or tag_title
@@ -681,7 +669,7 @@ def resolve_title_artist(filename, path):
 
 
 # ============================================================
-# Last.fm 유사 아티스트 / 유사곡
+# Last.fm 유사 아티스트 / 유사 앨범
 # ============================================================
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
 def get_similar_artists(artist_name, api_key, limit=6):
@@ -716,43 +704,14 @@ def get_similar_artists(artist_name, api_key, limit=6):
 
 
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
-def lastfm_resolve_track(track_name, artist_name, api_key):
-    """Last.fm track.search로 표기 차이(오탈자, 영문/한글, 띄어쓰기 등)를 보정한
-    가장 근접한 트랙명·아티스트명을 찾음. track.getSimilar가 정확한 표기에 민감해서
-    실패하는 경우가 많아, 검색으로 먼저 표준 표기를 알아낸 뒤 유사곡을 조회함."""
-    if not track_name or not api_key:
-        return track_name, artist_name
-    url = "https://ws.audioscrobbler.com/2.0/"
-    params = {
-        "method": "track.search",
-        "track": track_name,
-        "artist": artist_name,
-        "api_key": api_key,
-        "format": "json",
-        "limit": 1,
-    }
-    try:
-        resp = requests.get(url, params=params, timeout=8)
-        data = resp.json()
-        matches = data.get("results", {}).get("trackmatches", {}).get("track", [])
-        if isinstance(matches, dict):
-            matches = [matches]
-        if matches:
-            m = matches[0]
-            return m.get("name", track_name) or track_name, m.get("artist", artist_name) or artist_name
-    except Exception:
-        pass
-    return track_name, artist_name
-
-
-@st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
-def get_artist_top_tracks(artist_name, api_key, limit=6):
-    """artist.getTopTracks. track.getSimilar 결과가 비었을 때의 대체(fallback) 추천용."""
+def get_artist_top_albums(artist_name, api_key, limit=3):
+    """Last.fm artist.getTopAlbums 호출. [{name, artist, url, playcount}, ...] 반환.
+    (앨범 단위 getSimilar API가 없어서, 유사 아티스트의 대표 앨범을 유사 앨범 후보로 사용)"""
     if not artist_name or not api_key:
         return []
     url = "https://ws.audioscrobbler.com/2.0/"
     params = {
-        "method": "artist.gettoptracks",
+        "method": "artist.gettopalbums",
         "artist": artist_name,
         "api_key": api_key,
         "format": "json",
@@ -764,16 +723,17 @@ def get_artist_top_tracks(artist_name, api_key, limit=6):
         data = resp.json()
         if "error" in data:
             return []
-        tracks = data.get("toptracks", {}).get("track", [])
+        albums = data.get("topalbums", {}).get("album", [])
         result = []
-        for t in tracks:
-            artist_field = t.get("artist", {})
-            artist_name_out = artist_field.get("name", "") if isinstance(artist_field, dict) else str(artist_field)
+        for alb in albums:
+            name = alb.get("name", "")
+            if not name:
+                continue
             result.append({
-                "name": t.get("name", ""),
-                "artist": artist_name_out,
-                "match": None,  # 유사도가 아닌 인기 순위 기반이라 match 없음
-                "url": t.get("url", ""),
+                "name": name,
+                "artist": artist_name,
+                "url": alb.get("url", ""),
+                "playcount": int(alb.get("playcount", 0) or 0),
             })
         return result
     except Exception:
@@ -781,56 +741,28 @@ def get_artist_top_tracks(artist_name, api_key, limit=6):
 
 
 @st.cache_data(show_spinner=False, ttl=60 * 60 * 24)
-def get_similar_tracks(artist_name, track_name, api_key, limit=6):
-    """Last.fm 기반 유사곡 조회.
-    1) track.search로 정확한 표기를 먼저 보정
-    2) 보정된 표기로 track.getSimilar 시도, 실패 시 원래 입력값으로 재시도
-    3) 그래도 결과가 없으면 artist.getTopTracks로 대체
-    반환값: (결과 리스트, 대체(fallback) 여부)"""
-    if not artist_name or not track_name or not api_key:
-        return [], False
+def get_similar_albums(artist_name, api_key, limit=6):
+    """유사 아티스트들의 대표 앨범을 모아 '유사 앨범' 후보 목록을 만듦.
+    각 앨범은 원 아티스트와의 Last.fm 유사도(match)를 그대로 이어받음.
+    반환: [{album, artist, match, url}, ...] match 내림차순."""
+    if not artist_name or not api_key:
+        return []
+    similar_artists = get_similar_artists(artist_name, api_key, limit=limit)
+    if not similar_artists:
+        return []
 
-    resolved_track, resolved_artist = lastfm_resolve_track(track_name, artist_name, api_key)
-
-    def _call_getsimilar(t, a):
-        url = "https://ws.audioscrobbler.com/2.0/"
-        params = {
-            "method": "track.getsimilar",
-            "artist": a,
-            "track": t,
-            "api_key": api_key,
-            "format": "json",
-            "limit": limit,
-            "autocorrect": 1,
-        }
-        try:
-            resp = requests.get(url, params=params, timeout=8)
-            data = resp.json()
-            if "error" in data:
-                return []
-            tracks = data.get("similartracks", {}).get("track", [])
-            out = []
-            for tr in tracks:
-                artist_field = tr.get("artist", {})
-                artist_name_out = artist_field.get("name", "") if isinstance(artist_field, dict) else str(artist_field)
-                out.append({
-                    "name": tr.get("name", ""),
-                    "artist": artist_name_out,
-                    "match": float(tr.get("match", 0) or 0),
-                    "url": tr.get("url", ""),
-                })
-            return out
-        except Exception:
-            return []
-
-    result = _call_getsimilar(resolved_track, resolved_artist)
-    if not result and (resolved_track != track_name or resolved_artist != artist_name):
-        result = _call_getsimilar(track_name, artist_name)
-    if result:
-        return result, False
-
-    fallback = get_artist_top_tracks(resolved_artist or artist_name, api_key, limit=limit)
-    return fallback, bool(fallback)
+    results = []
+    for a in similar_artists:
+        top_albums = get_artist_top_albums(a["name"], api_key, limit=1)
+        for alb in top_albums:
+            results.append({
+                "album": alb["name"],
+                "artist": alb["artist"],
+                "match": a["match"],
+                "url": alb.get("url", a.get("url", "")),
+            })
+    results.sort(key=lambda x: x["match"], reverse=True)
+    return results[:limit]
 
 
 def render_similar_artists(artist_name, api_key, limit=6):
@@ -853,26 +785,25 @@ def render_similar_artists(artist_name, api_key, limit=6):
         )
 
 
-def render_similar_tracks(artist_name, track_name, api_key, limit=6):
+def render_similar_albums(artist_name, api_key, limit=6):
+    """유사 아티스트의 대표 앨범 기반 '유사 앨범' 목록 렌더링.
+    (track.getSimilar는 곡 표기 차이 때문에 실패가 잦아, 더 안정적인 앨범 단위 매칭으로 대체)"""
     if not api_key:
-        st.caption("⚠️ 사이드바에 Last.fm API Key를 입력하면 유사곡을 볼 수 있어요.")
+        st.caption("⚠️ 사이드바에 Last.fm API Key를 입력하면 유사 앨범을 볼 수 있어요.")
         return
-    if not artist_name or not track_name:
-        st.caption("제목과 아티스트를 입력하면 유사곡을 찾아드려요.")
+    if not artist_name:
+        st.caption("아티스트 이름을 입력하면 유사 앨범을 찾아드려요.")
         return
-    similar, is_fallback = get_similar_tracks(artist_name, track_name, api_key, limit=limit)
-    if not similar:
-        st.caption(f"'{track_name}'에 대한 유사곡 정보를 찾을 수 없어요. 제목/아티스트 표기를 다르게 입력해보세요 (예: 영문 표기).")
+    albums = get_similar_albums(artist_name, api_key, limit=limit)
+    if not albums:
+        st.caption(f"'{artist_name}'과(와) 유사한 아티스트의 앨범 정보를 찾을 수 없어요.")
         return
-    if is_fallback:
-        st.caption("💡 정확히 일치하는 유사곡을 찾지 못해, 같은 아티스트의 인기곡으로 대신 보여드려요.")
-    for t in similar:
-        label = f'{t["name"]} — {t["artist"]}'
-        match_text = f'{t["match"]*100:.1f}%' if t["match"] is not None else "인기곡"
+    for alb in albums:
+        label = f'{alb["album"]} — {alb["artist"]}'
         st.markdown(
-            f'<div class="genre-row"><span><a href="{t["url"]}" target="_blank" '
+            f'<div class="genre-row"><span><a href="{alb["url"]}" target="_blank" '
             f'style="color:#1A1D24;text-decoration:none;">{label}</a></span>'
-            f'<span>{match_text}</span></div>',
+            f'<span>{alb["match"]*100:.1f}%</span></div>',
             unsafe_allow_html=True,
         )
 
@@ -943,7 +874,7 @@ def delete_from_library(filename):
 
 
 # ============================================================
-# 시각화 (레이더 차트)
+# 시각화 (레이더 차트 / 막대그래프 / 2D 지도)
 # ============================================================
 def plot_radar(result, title="", figsize=(2.8, 2.8)):
     labels = [
@@ -980,8 +911,89 @@ def plot_radar(result, title="", figsize=(2.8, 2.8)):
     return fig
 
 
-def metric_card(label, value, sub="", amber=False):
-    cls = "metric-value amber" if amber else "metric-value"
+def plot_metric_bars(result, figsize=(5.2, 3.4)):
+    """분석 결과 수치들을 한눈에 비교할 수 있는 정규화 막대그래프(0~1 스케일)."""
+    bar_defs = [
+        ("BPM", min(result["bpm"] / 200, 1.0)),
+        ("Danceability", min(result["danceability"] / 1.5, 1.0)),
+        ("Loudness", min(result["loudness"], 1.0)),
+        ("Dynamic Complexity", min(result["dynamic_complexity"] / 8, 1.0)),
+        ("Acousticness", result["acousticness"]),
+        ("Energy", result["energy"]),
+        ("Instrumentalness", result["instrumentalness"]),
+        ("Valence", result["valence"]),
+    ]
+    names = [b[0] for b in bar_defs][::-1]
+    values = [b[1] for b in bar_defs][::-1]
+    colors = ["#1F8F7B" if v < 0.7 else "#E08A2E" for v in values]
+
+    fig, ax = plt.subplots(figsize=figsize)
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("#FFFFFF")
+    y_pos = np.arange(len(names))
+    ax.barh(y_pos, values, color=colors, height=0.55)
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(names, fontsize=9, color="#1A1D24")
+    ax.set_xlim(0, 1.0)
+    ax.set_xlabel("정규화된 값 (0~1)", fontsize=8, color="#6B7280")
+    ax.tick_params(axis='x', labelsize=8, colors="#6B7280")
+    for spine in ["top", "right"]:
+        ax.spines[spine].set_visible(False)
+    for spine in ["left", "bottom"]:
+        ax.spines[spine].set_color("#E5E7EB")
+    for i, v in enumerate(values):
+        ax.text(v + 0.02, i, f"{v:.2f}", va="center", fontsize=8, color="#1A1D24")
+    fig.tight_layout()
+    return fig
+
+
+def plot_library_map(library, figsize=(6.5, 5.5)):
+    """라이브러리 전체 곡을 Valence(x) x Energy(y) 평면에 흩뿌려 한눈에 보여주는 2D 지도.
+    무드 배너와 같은 정서 원형모델(circumplex) 좌표계를 사용."""
+    fig, ax = plt.subplots(figsize=figsize)
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("#F7F8FA")
+
+    ax.axhline(0.5, color="#D1D5DB", linewidth=1, linestyle="--")
+    ax.axvline(0.5, color="#D1D5DB", linewidth=1, linestyle="--")
+
+    xs = [s["valence"] for s in library]
+    ys = [s["energy"] for s in library]
+    sizes = [60 + min(s.get("danceability", 1.0), 1.5) * 60 for s in library]
+    colors = [s.get("acousticness", 0.5) for s in library]
+
+    sc = ax.scatter(xs, ys, s=sizes, c=colors, cmap="YlGn_r", edgecolors="#1A1D24",
+                     linewidths=0.6, alpha=0.85, vmin=0, vmax=1)
+
+    for s in library:
+        label = s.get("title") or s["filename"]
+        if len(label) > 12:
+            label = label[:11] + "…"
+        ax.annotate(label, (s["valence"], s["energy"]), fontsize=7.5, color="#1A1D24",
+                    xytext=(5, 5), textcoords="offset points")
+
+    ax.set_xlim(-0.05, 1.05)
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_xlabel("Valence (긍정정서) →", fontsize=9, color="#374151")
+    ax.set_ylabel("Energy (에너지) →", fontsize=9, color="#374151")
+    ax.tick_params(labelsize=8, colors="#6B7280")
+    for spine in ax.spines.values():
+        spine.set_color("#E5E7EB")
+
+    cbar = fig.colorbar(sc, ax=ax, shrink=0.7, pad=0.02)
+    cbar.set_label("Acousticness", fontsize=8, color="#6B7280")
+    cbar.ax.tick_params(labelsize=7, colors="#6B7280")
+
+    fig.tight_layout()
+    return fig
+
+
+def metric_card(label, value, sub="", amber=False, value_class=""):
+    cls = "metric-value"
+    if amber:
+        cls += " amber"
+    if value_class:
+        cls += f" {value_class}"
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-label">{label}</div>
@@ -995,7 +1007,6 @@ def render_mood_banner(result):
     mood_label = result.get("mood_label")
     mood_desc = result.get("mood_desc")
     if not mood_label:
-        # 과거에 저장된 라이브러리 항목처럼 무드 필드가 없는 경우 즉석에서 계산
         mood_label, mood_desc = determine_mood(result)
     st.markdown(f"""
     <div class="mood-card">
@@ -1039,6 +1050,9 @@ def render_report(result):
     with c2:
         metric_card(METRIC_LABELS["zcr"], f'{result["zcr"]:.4f}', sub=interpret_zcr(result["zcr"]))
 
+    st.markdown('<div class="section-label">수치 한눈에 보기 (막대그래프)</div>', unsafe_allow_html=True)
+    st.pyplot(plot_metric_bars(result), use_container_width=False)
+
     st.markdown('<div class="section-label">장르 예측 TOP 5</div>', unsafe_allow_html=True)
     for label, prob in result["top_genres"]:
         st.markdown(f"""
@@ -1047,7 +1061,7 @@ def render_report(result):
 
 
 def render_lastfm_block(key_prefix, default_title, default_artist, api_key):
-    """제목/아티스트 입력 UI + 유사 아티스트/유사곡 결과를 함께 렌더링."""
+    """제목/아티스트 입력 UI + 유사 아티스트/유사 앨범 결과를 함께 렌더링."""
     c1, c2 = st.columns(2)
     with c1:
         title_value = st.text_input(
@@ -1063,8 +1077,8 @@ def render_lastfm_block(key_prefix, default_title, default_artist, api_key):
     st.markdown('<div class="section-label">유사 아티스트 (Last.fm)</div>', unsafe_allow_html=True)
     render_similar_artists(artist_value, api_key)
 
-    st.markdown('<div class="section-label">유사곡 (Last.fm)</div>', unsafe_allow_html=True)
-    render_similar_tracks(artist_value, title_value, api_key)
+    st.markdown('<div class="section-label">유사 앨범 (Last.fm)</div>', unsafe_allow_html=True)
+    render_similar_albums(artist_value, api_key)
 
     return title_value, artist_value
 
@@ -1271,6 +1285,11 @@ with tab4:
     if not library:
         st.caption("아직 저장된 곡이 없어요. 단일 분석 탭에서 저장하거나 위에서 일괄 분석을 실행해보세요.")
     else:
+        if len(library) >= 2:
+            st.markdown('<div class="section-label">라이브러리 지도 (감성 분포 한눈에 보기)</div>', unsafe_allow_html=True)
+            st.caption("점의 위치 = Valence × Energy, 점 크기 = Danceability, 색 = Acousticness")
+            st.pyplot(plot_library_map(library), use_container_width=False)
+
         for entry in library:
             with st.expander(f"🎵 {entry['filename']}"):
                 left_col, right_col = st.columns([4, 1])
@@ -1316,7 +1335,7 @@ with tab4:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-label">{display_name}</div>
-                    <div class="metric-value">종합 추천 점수 {rec['combined_score']*100:.1f}%</div>
+                    <div class="metric-value recommend-score">종합 추천 점수 {rec['combined_score']*100:.1f}%</div>
                     <div class="metric-sub">Essentia 유사도 {rec['essentia_score']*100:.1f}% · Last.fm 연관도 {rec['lastfm_score']*100:.1f}%</div>
                     <div class="metric-sub">💬 추천 이유: {reason}</div>
                 </div>
