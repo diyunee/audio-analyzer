@@ -1100,14 +1100,15 @@ def build_library_map(library, height=620):
 
     fig = px.scatter(
         df, x="valence", y="energy",
-        size="danceability", color="acousticness",
-        color_continuous_scale=["#CFE8E2", "#8FCBB9", "#1F8F7B", "#146B5C", "#0B3A31"],
-        range_color=[0, 1.5],
-        size_max=30,
+        # 점 크기는 동일하게 유지하고 Danceability를 색으로 표현한다.
+        # 이 분석기의 Danceability는 1을 넘을 수 있으므로 0~2 범위를 사용한다.
+        color="danceability",
+        color_continuous_scale=["#3B1B6F", "#365C9D", "#1F8F7B", "#E08A2E", "#F4C95D"],
+        range_color=[0, 2.0],
         custom_data=["title", "artist", "danceability", "acousticness"],
     )
     fig.update_traces(
-        marker=dict(line=dict(width=1.2, color="#1A1D24"), opacity=0.9, sizemin=10),
+        marker=dict(size=13, line=dict(width=1.2, color="#1A1D24"), opacity=0.9),
         hovertemplate=(
             "<b>%{customdata[0]}</b><br>"
             "%{customdata[1]}<br>"
@@ -1131,8 +1132,10 @@ def build_library_map(library, height=620):
             color="#374151", gridcolor="#E5E7EB", zeroline=False,
         ),
         coloraxis_colorbar=dict(
-            title="Acousticness<br>(어쿠스틱함)", orientation="h",
+            title="Danceability<br>(춤추기 좋은 정도)", orientation="h",
             y=-0.22, len=0.85, thickness=12,
+            tickvals=[0, 0.5, 1.0, 1.5, 2.0],
+            ticktext=["낮음", "0.5", "보통", "1.5", "높음"],
         ),
         margin=dict(l=10, r=10, t=10, b=10),
         height=height,
@@ -1511,5 +1514,5 @@ with tab_map:
         st.caption("지도를 그리려면 라이브러리에 곡이 2개 이상 있어야 해요.")
     else:
         st.markdown('<div class="section-label">라이브러리 지도 (감성 분포 한눈에 보기)</div>', unsafe_allow_html=True)
-        st.caption("점의 위치 = Valence × Energy, 점 크기 = Danceability, 색 = Acousticness · 곡에 마우스를 올리면 제목이 나타나요")
+        st.caption("점의 위치 = Valence × Energy, 색 = Danceability · 모든 점의 크기는 같으며, 마우스를 올리면 곡 정보와 Acousticness가 나타나요")
         st.plotly_chart(build_library_map(map_library), use_container_width=True)
