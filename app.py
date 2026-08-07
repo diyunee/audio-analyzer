@@ -1213,8 +1213,30 @@ def render_mood_banner(result):
     """, unsafe_allow_html=True)
 
 
+def render_predicted_genres(result, top_n=5):
+    """Discogs-EffNet 장르 모델이 예측한 상위 장르와 모델 점수를 표시."""
+    top_genres = result.get("top_genres") or []
+    st.markdown('<div class="section-label">예상 장르 (Top 5)</div>', unsafe_allow_html=True)
+
+    if not top_genres:
+        st.caption("이 곡에는 저장된 예상 장르 정보가 없어요. 곡을 다시 분석하면 표시됩니다.")
+        return
+
+    for genre, score in top_genres[:top_n]:
+        try:
+            score_text = f"{float(score) * 100:.1f}%"
+        except (TypeError, ValueError):
+            score_text = "-"
+        st.markdown(
+            f'<div class="genre-row"><span>{genre}</span><span>{score_text}</span></div>',
+            unsafe_allow_html=True,
+        )
+    st.caption("장르 옆 수치는 Discogs-EffNet 모델의 상대적인 예측 점수이며, 확정 장르나 정확도를 뜻하지 않아요.")
+
+
 def render_report(result):
     render_mood_banner(result)
+    render_predicted_genres(result)
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
