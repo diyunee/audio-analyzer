@@ -268,7 +268,7 @@ def mpath(fname):
 
 
 # ============================================================
-# 장르 기반 BPM 옥타브 보정 (+ 댄서빌리티·에너지 prior)
+# 장르 기반 BPM 옥타브 보정 (+ 에너지 prior)
 # ============================================================
 GENRE_BPM_CENTER = {
     # 주의: 아래 키워드는 장르명에 '부분 문자열'로 매칭되므로, 짧고 모호한 단어는
@@ -295,27 +295,9 @@ GENRE_BPM_CENTER = {
 }
 
 
-def _danceability_bpm_range(danceability):
-    """댄서빌리티(리듬 규칙성) 값이 그럴듯하게 나올 수 있는 BPM 대역을 추정.
-    리듬이 규칙적일수록(값이 높을수록) 빠른 BPM대를, 불규칙할수록 느린 BPM대를 선호.
-    어디까지나 '참고용 대역'이며, 아래 genre_based_octave_correction에서는
-    이 대역을 하드 컷오프가 아니라 연속적인 점수로만 반영한다."""
-    if danceability < 0.5:
-        return (40, 95)
-    elif danceability < 1.0:
-        return (70, 115)
-    elif danceability < 1.3:
-        return (90, 130)
-    else:
-        return (100, 190)
-
-
 def _energy_bpm_range(energy):
     """emomusic arousal 기반 Energy(0~1)가 그럴듯한 BPM 대역을 추정.
-    danceability만으로는 리듬 규칙성 오검출(예: 강렬한 곡인데 DFA 값이 낮게 나오는 경우)에
-    취약해서, 서로 다른 축인 Energy를 보조 신호로 함께 반영한다. 값이 높을수록(강렬할수록)
-    빠른 BPM대를, 낮을수록 느린 BPM대를 선호. 마찬가지로 하드 컷오프가 아니라 연속 점수로만
-    반영한다."""
+    값이 높을수록 빠른 BPM대를 선호하되 하드 컷오프가 아닌 보조 점수로만 반영한다."""
     if energy < 0.3:
         return (40, 100)
     elif energy < 0.5:
@@ -326,7 +308,7 @@ def _energy_bpm_range(energy):
         return (110, 190)
 
 
-def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, danceability=1.0, energy=0.5, top_n=8):
+def _select_bpm_candidate(bpm_candidate, top_genres, energy=0.5):
     """원본/절반/두배 BPM 후보 중 하나를 고르는 옥타브 보정.
 
     과거 버전은 댄서빌리티 대역에 후보가 '단 하나'만 걸리면 장르 신호를 완전히 무시하고
@@ -335,16 +317,11 @@ def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, dancea
     "절반 BPM"(예: 실제 128인데 64) 후보 하나만 우연히 걸리면 장르가 명백히 댄스/일렉트로닉인데도
     발라드 템포로 잘못 보정되는 사례가 있었다.
 
-    지금 버전은 하드 컷오프를 없애고, 장르 유사도 점수 · 댄서빌리티 대역 적합도 점수 ·
-    Energy(emomusic arousal) 대역 적합도 점수를 모두 연속값으로 계산해 가중합으로 최종
-    후보를 고른다. Energy는 danceability와 다른 축의 신호라서, danceability 하나가
-    오검출되더라도 Energy가 보완해준다(예: 강렬하고 빠른 곡인데 DFA 리듬 규칙성이 낮게
-    측정돼 danceability 대역만으로는 느린 BPM으로 잘못 끌려가는 경우). 장르 예측(400종
-    분류)은 음향 prior 두 개보다 신뢰도가 높은 신호이므로, 상위 장르 중 하나라도 BPM
+    지금 버전은 Danceability를 BPM 판단에서 제외하고, 장르 유사도와 Energy 대역 적합도를
+    연속값으로 계산해 최종 후보를 고른다. 장르 예측(400종 분류)은 Energy보다 우선하며,
+    상위 장르 중 하나라도 BPM
     성향이 뚜렷한 장르(장르명이 GENRE_BPM_CENTER 키워드와 매칭)와 겹치면 장르 쪽에 가장
     큰 비중을 준다."""
-    top_idx = np.argsort(avg_predictions)[::-1][:top_n]
-    top_genres = [(labels[i], avg_predictions[i]) for i in top_idx]
     # 절반/두배(옥타브 오류)뿐 아니라, 스윙/트리플렛 느낌의 리듬에서 흔한
     # 1.5배 · 2/3배 오검출도 후보에 포함시킨다.
     candidates = {
@@ -383,33 +360,41 @@ def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, dancea
         dist = (lo - bpm_value) if bpm_value < lo else (bpm_value - hi)
         return float(np.exp(-(dist ** 2) / (2 * 20 ** 2)))
 
-    dance_lo, dance_hi = _danceability_bpm_range(danceability)
     energy_lo, energy_hi = _energy_bpm_range(energy)
 
     genre_scores = {k: genre_score(v) for k, v in candidates.items()}
-    dance_scores = {k: range_score(v, dance_lo, dance_hi) for k, v in candidates.items()}
     energy_scores = {k: range_score(v, energy_lo, energy_hi) for k, v in candidates.items()}
 
     # 상위 장르 중 BPM 성향이 뚜렷한 장르와 매칭되는 게 하나라도 있으면(=장르 신호 존재)
-    # 장르 쪽 비중을 가장 크게 두고, danceability·energy는 서로를 보완하는 보조 신호로
-    # 절반씩 나눠 가진다. 매칭이 전혀 없으면 두 음향 신호에만 균등하게 의존한다.
+    # Danceability는 빠르기가 아니라 리듬의 규칙성을 뜻하므로 BPM 선택에 사용하지 않는다.
+    # 장르 신호가 있으면 장르를 우선하고 Energy는 보조 근거로만 사용한다.
     has_genre_signal = any(score > 0 for score in genre_scores.values())
     if has_genre_signal:
-        genre_weight, dance_weight, energy_weight = 0.6, 0.2, 0.2
+        genre_weight, energy_weight = 0.75, 0.25
     else:
-        genre_weight, dance_weight, energy_weight = 0.0, 0.5, 0.5
+        genre_weight, energy_weight = 0.0, 1.0
 
     # "원본"에 작은 가산점을 줘서, 다른 후보와 점수 차가 크지 않은 애매한 상황에서는
     # Essentia가 직접 검출한 원래 BPM을 함부로 뒤집지 않도록 한다. 장르/음향 신호가
     # 뚜렷하게 다른 후보를 가리킬 때는 이 가산점을 넘어서므로 여전히 보정이 이루어진다.
     ORIGINAL_BIAS = 0.08
     combined = {
-        k: genre_weight * genre_scores[k] + dance_weight * dance_scores[k] + energy_weight * energy_scores[k]
+        k: genre_weight * genre_scores[k] + energy_weight * energy_scores[k]
         + (ORIGINAL_BIAS if k == "원본" else 0.0)
         for k in candidates
     }
     best_key = max(combined, key=combined.get)
     return candidates[best_key]
+
+
+def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, energy=0.5, top_n=8):
+    """모델의 상위 장르 예측과 Energy로 BPM의 옥타브/비율 오류를 보정한다."""
+    top_idx = np.argsort(avg_predictions)[::-1][:top_n]
+    top_genres = [(labels[i], float(avg_predictions[i])) for i in top_idx]
+    return _select_bpm_candidate(float(bpm_candidate), top_genres, energy=energy)
+
+
+BPM_CORRECTION_VERSION = 2
 
 
 def format_duration(seconds):
@@ -704,9 +689,9 @@ def analyze_audio(file_bytes, filename):
     energy = float((emomusic_pred[emomusic_labels.index("arousal")] - 1) / 8)
 
     danceability = float(feats['rhythm.danceability'])
+    raw_bpm = float(feats['rhythm.bpm'])
     final_bpm = float(genre_based_octave_correction(
-        feats['rhythm.bpm'], genre_labels, genre_pred,
-        danceability=danceability, energy=energy
+        raw_bpm, genre_labels, genre_pred, energy=energy
     ))
 
     top5_idx = np.argsort(genre_pred)[::-1][:5]
@@ -715,6 +700,8 @@ def analyze_audio(file_bytes, filename):
     result = {
         "duration": float(feats['metadata.audio_properties.length']),
         "bpm": final_bpm,
+        "raw_bpm": raw_bpm,
+        "bpm_correction_version": BPM_CORRECTION_VERSION,
         "danceability": danceability,
         "loudness": float(feats['lowlevel.average_loudness']),
         "dynamic_complexity": float(feats['lowlevel.dynamic_complexity']),
@@ -1035,7 +1022,28 @@ def load_library():
     if os.path.exists(LIBRARY_PATH):
         try:
             with open(LIBRARY_PATH) as f:
-                return json.load(f)
+                library = json.load(f)
+
+            # 이전 버전에서 저장된 곡은 오디오를 다시 올리지 않아도 한 번만 재보정한다.
+            # 저장된 bpm을 당시 원본 후보로 간주하며, 상위 장르와 Energy가 있을 때만 변경한다.
+            changed = False
+            for entry in library:
+                if entry.get("bpm_correction_version", 0) >= BPM_CORRECTION_VERSION:
+                    continue
+                top_genres = entry.get("top_genres") or []
+                if top_genres and entry.get("bpm"):
+                    old_bpm = float(entry["bpm"])
+                    entry.setdefault("raw_bpm", old_bpm)
+                    entry["bpm"] = float(_select_bpm_candidate(
+                        old_bpm, top_genres, energy=float(entry.get("energy", 0.5))
+                    ))
+                    entry["bpm_correction_version"] = BPM_CORRECTION_VERSION
+                    changed = True
+
+            if changed:
+                with open(LIBRARY_PATH, "w") as f:
+                    json.dump(library, f)
+            return library
         except Exception:
             return []
     return []
@@ -1433,10 +1441,9 @@ with tab3:
     <h3>BPM(템포)</h3>
     <p>원본 BPM뿐 아니라 절반·두배(옥타브 오류) 및 1.5배·2/3배(스윙·트리플렛 리듬에서 흔한 오검출) 후보까지
     총 5가지를 놓고 고릅니다. 각 후보는 ① 장르 예측 Top8과 장르별 전형적인 템포를 비교한 "장르 유사도",
-    ② 댄서빌리티(리듬 규칙성)로 추정한 그럴듯한 BPM 대역과의 근접도, ③ Energy(각성도)로 추정한
-    그럴듯한 BPM 대역과의 근접도, 세 점수를 0~1 범위로 정규화해 가중합한 값으로 비교합니다. Energy는
-    댄서빌리티와 다른 축의 신호라서, 리듬 규칙성이 낮게 측정되는 곡(강렬하지만 DFA 값이 낮게 나오는 경우 등)
-    에서도 실제 템포감을 보완해줍니다. 장르 라벨 하나에 여러 키워드가 부분 문자열로 걸릴 수 있는 경우(예:
+    ② Energy(각성도)로 추정한 그럴듯한 BPM 대역과의 근접도를 비교해 선택합니다. Danceability는
+    리듬의 규칙성을 나타내며 곡의 빠르기와는 다르므로 BPM 보정에는 사용하지 않습니다. 장르 라벨 하나에
+    여러 키워드가 부분 문자열로 걸릴 수 있는 경우(예:
     "Vocal House"가 "Vocal"과 "House" 둘 다에 걸리는 것) 가장 구체적인 키워드 하나만 채택해서, 이름만
     비슷한 다른 장르 때문에 엉뚱한 템포로 끌려가지 않게 합니다. 또한 뚜렷한 근거가 없을 때는 Essentia가
     직접 검출한 원본 BPM에 약간의 가산점을 줘서, 애매한 상황에서 불필요하게 배수를 뒤집지 않도록 했습니다.</p>
