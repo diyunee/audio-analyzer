@@ -278,6 +278,12 @@ GENRE_BPM_CENTER = {
     "Ballad": 70, "R&B": 80, "Contemporary R&B": 78,
     "Chillwave": 90, "Downtempo": 85, "Ambient": 70, "Trip Hop": 85,
     "Lo-Fi": 80, "Bossa": 90,
+    # 빠른 록 계열을 "Pop"이나 포괄적인 "Rock"보다 먼저 구체적으로 매칭한다.
+    # 특히 Pop Punk/Punk Rock은 비트 추적기가 약 100 BPM으로 잡아도 실제 체감 템포가
+    # 약 150 BPM인 3:2 오류가 자주 생겨, 아래의 1.5배 후보를 올바르게 평가할 수 있게 한다.
+    "Skate Punk": 170, "Pop Punk": 155, "Punk Rock": 160, "Punk": 155,
+    "Alternative Rock": 125, "Indie Rock": 125, "Hard Rock": 125,
+    "Pop Rock": 125, "Rock": 125,
     "Indie Pop": 115, "Synth-pop": 112, "Pop": 110, "Dance-pop": 118, "Dance": 122,
     "Disco": 118, "Boogie": 116, "Funk": 108, "Freestyle": 118, "New Jack Swing": 100,
     "Tropical House": 105, "House": 124, "Deep House": 122, "Progressive House": 126,
