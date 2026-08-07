@@ -308,7 +308,87 @@ def _energy_bpm_range(energy):
         return (110, 190)
 
 
-def _select_bpm_candidate(bpm_candidate, top_genres, energy=0.5, return_details=False):
+def _tempo_periodicity_scores(audio, bpm_candidate, sample_rate=16000):
+    """온셋 포락선의 자기상관으로 BPM 배수 후보의 실제 반복 주기를 측정한다.
+
+    장르나 Energy가 아닌 음원 자체의 증거다. 느린 곡에서 세부 박을 두 배 BPM으로
+    검출하는 경우, 절반 BPM의 자기상관이 더 강하게 나타난다.
+    """
+    import essentia.standard as es
+
+    candidates = {
+        "원본": float(bpm_candidate),
+        "절반": float(bpm_candidate) / 2,
+        "두배": float(bpm_candidate) * 2,
+        "2/3배": float(bpm_candidate) * 2 / 3,
+        "1.5배": float(bpm_candidate) * 1.5,
+    }
+    frame_size, hop_size = 1024, 256
+    spectrum = es.Spectrum(size=frame_size)
+    window = es.Windowing(type="hann")
+    flux = []
+    previous = None
+    for frame in es.FrameGenerator(
+        audio, frameSize=frame_size, hopSize=hop_size, startFromZero=True
+    ):
+        magnitude = np.log1p(spectrum(window(frame)))
+        if previous is None:
+            flux.append(0.0)
+        else:
+            flux.append(float(np.maximum(magnitude - previous, 0.0).sum()))
+        previous = magnitude
+
+    onset = np.asarray(flux, dtype=np.float32)
+    if onset.size < 32 or not np.any(onset > 0):
+        return {key: 0.0 for key in candidates}
+
+    # 약 8초 이동 평균을 빼서 곡의 음량 변화가 아닌 반복적인 타격을 강조한다.
+    frames_per_second = sample_rate / hop_size
+    smooth_size = max(3, int(round(8 * frames_per_second)))
+    baseline = np.convolve(onset, np.ones(smooth_size) / smooth_size, mode="same")
+    onset = np.maximum(onset - baseline, 0.0)
+    onset_positive = onset.copy()
+    onset -= onset.mean()
+
+    scores = {}
+    for key, bpm in candidates.items():
+        if bpm < 35 or bpm > 220:
+            scores[key] = 0.0
+            continue
+        center_lag = frames_per_second * 60.0 / bpm
+        lag_scores = []
+        # BPM 양자화와 미세한 템포 흔들림을 허용한다.
+        for lag in range(max(1, int(round(center_lag)) - 2), int(round(center_lag)) + 3):
+            left, right = onset[:-lag], onset[lag:]
+            denom = np.sqrt(np.dot(left, left) * np.dot(right, right)) + 1e-8
+            lag_scores.append(float(np.dot(left, right) / denom))
+        scores[key] = max(max(lag_scores), 0.0)
+
+    maximum = max(scores.values())
+    if maximum > 0:
+        scores = {key: float(value / maximum) for key, value in scores.items()}
+
+    # 원본 BPM 그리드에서 매 두 번째 박만 강한지 측정한다. 높은 값은 검출기가
+    # 큰 박이 아니라 세부 박을 센 double-time일 가능성을 뜻한다.
+    raw_period = frames_per_second * 60.0 / float(bpm_candidate)
+    best_values = None
+    best_mean = -1.0
+    for phase in np.linspace(0, raw_period, 64, endpoint=False):
+        indices = np.arange(phase, len(onset_positive), raw_period).astype(int)
+        values = onset_positive[indices]
+        if values.size >= 8 and float(values.mean()) > best_mean:
+            best_mean, best_values = float(values.mean()), values
+    half_time_accent = 0.0
+    if best_values is not None:
+        even = float(best_values[::2].mean())
+        odd = float(best_values[1::2].mean())
+        half_time_accent = abs(even - odd) / (even + odd + 1e-8)
+    scores["half_time_accent"] = float(np.clip(half_time_accent, 0.0, 1.0))
+    return scores
+
+
+def _select_bpm_candidate(bpm_candidate, top_genres, energy=0.5, periodicity_scores=None,
+                          return_details=False):
     """원본/절반/두배 BPM 후보 중 하나를 고르는 옥타브 보정.
 
     과거 버전은 댄서빌리티 대역에 후보가 '단 하나'만 걸리면 장르 신호를 완전히 무시하고
@@ -397,12 +477,41 @@ def _select_bpm_candidate(bpm_candidate, top_genres, energy=0.5, return_details=
         + (ORIGINAL_BIAS if k == "원본" else 0.0)
         for k in candidates
     }
+
+    # 실제 오디오 반복 주기가 있으면 장르·Energy prior보다 우선한다. 이 음향 증거가
+    # 충분할 때는 85%를 부여해, 후렴의 큰 음량 때문에 Energy가 높게 나오더라도
+    # 느린 곡의 double-time 오류가 다시 살아나지 않게 한다.
+    if periodicity_scores and max(periodicity_scores.values(), default=0.0) > 0:
+        combined = {
+            key: 0.85 * float(periodicity_scores.get(key, 0.0)) + 0.15 * combined[key]
+            for key in candidates
+        }
     best_key = max(combined, key=combined.get)
+
+    # 느린 큰 박이 명확한 double-time 사례는 prior와 무관하게 절반 후보를 채택한다.
+    # AKMU 테스트 음원은 절반 주기가 원본보다 강하고 강세 교대가 약 52%였다.
+    if periodicity_scores:
+        half_bpm = candidates["절반"]
+        half_advantage = (
+            float(periodicity_scores.get("절반", 0.0))
+            - float(periodicity_scores.get("원본", 0.0))
+        )
+        accent = float(periodicity_scores.get("half_time_accent", 0.0))
+        if 45 <= half_bpm <= 95 and half_advantage >= 0.12 and accent >= 0.25:
+            best_key = "절반"
 
     # 원본과 차이가 아주 작으면 배수 보정을 하지 않는다. 점수 차가 확실할 때만
     # half/double-time 판정을 적용해 후보가 불필요하게 뒤집히는 것을 막는다.
     MIN_CORRECTION_MARGIN = 0.12
-    if best_key != "원본" and combined[best_key] - combined["원본"] < MIN_CORRECTION_MARGIN:
+    strong_half_time = (
+        best_key == "절반"
+        and periodicity_scores
+        and float(periodicity_scores.get("절반", 0.0))
+            - float(periodicity_scores.get("원본", 0.0)) >= 0.12
+        and float(periodicity_scores.get("half_time_accent", 0.0)) >= 0.25
+    )
+    if (best_key != "원본" and not strong_half_time
+            and combined[best_key] - combined["원본"] < MIN_CORRECTION_MARGIN):
         best_key = "원본"
 
     details = {
@@ -410,6 +519,9 @@ def _select_bpm_candidate(bpm_candidate, top_genres, energy=0.5, return_details=
         "genre_evidence": genre_mass,
         "genre_weight": genre_weight,
         "candidate_scores": {k: float(v) for k, v in combined.items()},
+        "periodicity_scores": {
+            k: float(v) for k, v in (periodicity_scores or {}).items()
+        },
         "confidence": float(np.clip(
             0.5 + (combined[best_key] - sorted(combined.values())[-2]), 0.0, 1.0
         )),
@@ -420,16 +532,17 @@ def _select_bpm_candidate(bpm_candidate, top_genres, energy=0.5, return_details=
 
 
 def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, energy=0.5, top_n=8,
-                                  return_details=False):
+                                  periodicity_scores=None, return_details=False):
     """모델의 상위 장르 예측과 Energy로 BPM의 옥타브/비율 오류를 보정한다."""
     top_idx = np.argsort(avg_predictions)[::-1][:top_n]
     top_genres = [(labels[i], float(avg_predictions[i])) for i in top_idx]
     return _select_bpm_candidate(
-        float(bpm_candidate), top_genres, energy=energy, return_details=return_details
+        float(bpm_candidate), top_genres, energy=energy,
+        periodicity_scores=periodicity_scores, return_details=return_details
     )
 
 
-BPM_CORRECTION_VERSION = 3
+BPM_CORRECTION_VERSION = 4
 
 
 def format_duration(seconds):
@@ -725,8 +838,10 @@ def analyze_audio(file_bytes, filename):
 
     danceability = float(feats['rhythm.danceability'])
     raw_bpm = float(feats['rhythm.bpm'])
+    periodicity_scores = _tempo_periodicity_scores(audio_16k, raw_bpm, sample_rate=16000)
     final_bpm, bpm_details = genre_based_octave_correction(
-        raw_bpm, genre_labels, genre_pred, energy=energy, return_details=True
+        raw_bpm, genre_labels, genre_pred, energy=energy,
+        periodicity_scores=periodicity_scores, return_details=True
     )
 
     top5_idx = np.argsort(genre_pred)[::-1][:5]
@@ -740,6 +855,7 @@ def analyze_audio(file_bytes, filename):
         "bpm_confidence": bpm_details["confidence"],
         "bpm_genre_evidence": bpm_details["genre_evidence"],
         "bpm_candidate_scores": bpm_details["candidate_scores"],
+        "bpm_periodicity_scores": bpm_details["periodicity_scores"],
         "bpm_correction_version": BPM_CORRECTION_VERSION,
         "danceability": danceability,
         "loudness": float(feats['lowlevel.average_loudness']),
