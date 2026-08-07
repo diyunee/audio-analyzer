@@ -275,15 +275,19 @@ GENRE_BPM_CENTER = {
     "Chillwave": 90, "Downtempo": 85, "Ambient": 70, "Trip Hop": 85,
     "Lo-Fi": 80, "Bossa": 90,
     "Indie Pop": 115, "Synth-pop": 112, "Pop": 110, "Dance-pop": 118,
-    "Tropical House": 105, "House": 124, "Deep House": 122,
+    "Tropical House": 105, "House": 124, "Deep House": 122, "Progressive House": 126,
+    "Electro": 128, "Electropop": 118, "Eurodance": 138, "Big Room": 128,
     "Hip Hop": 90, "Trap": 140,
     "Techno": 130, "Trance": 136, "Dubstep": 140, "Drum": 170,
+    "Hardstyle": 150, "Garage": 130, "EDM": 128,
 }
 
 
 def _danceability_bpm_range(danceability):
     """댄서빌리티(리듬 규칙성) 값이 그럴듯하게 나올 수 있는 BPM 대역을 추정.
-    리듬이 규칙적일수록(값이 높을수록) 빠른 BPM대를, 불규칙할수록 느린 BPM대를 선호."""
+    리듬이 규칙적일수록(값이 높을수록) 빠른 BPM대를, 불규칙할수록 느린 BPM대를 선호.
+    어디까지나 '참고용 대역'이며, 아래 genre_based_octave_correction에서는
+    이 대역을 하드 컷오프가 아니라 연속적인 점수로만 반영한다."""
     if danceability < 0.5:
         return (40, 95)
     elif danceability < 1.0:
@@ -294,12 +298,19 @@ def _danceability_bpm_range(danceability):
         return (100, 190)
 
 
-def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, danceability=1.0, top_n=5):
+def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, danceability=1.0, top_n=8):
     """원본/절반/두배 BPM 후보 중 하나를 고르는 옥타브 보정.
-    댄서빌리티가 명확한 BPM 대역을 가리킬 때는 그 대역을 최우선(veto)으로 따르고,
-    대역 안에 후보가 여럿이거나 하나도 없을 때만 장르 유사도로 보조 판단한다.
-    (과거 버전은 장르 점수를 제한 없이 누적해서, danceability가 명백히 높아도
-    장르 매칭 개수에 따라 절반 BPM을 잘못 고르는 경우가 있었음)"""
+
+    과거 버전은 댄서빌리티 대역에 후보가 '단 하나'만 걸리면 장르 신호를 완전히 무시하고
+    그 후보를 그대로 채택했다(veto 방식). 문제는 DFA 기반 댄서빌리티 값이 EDM/댄스곡에서도
+    낮게 측정되는 경우가 있어서, 이때 대역이 실제보다 느린 쪽으로 잡히고 정작 그 대역에
+    "절반 BPM"(예: 실제 128인데 64) 후보 하나만 우연히 걸리면 장르가 명백히 댄스/일렉트로닉인데도
+    발라드 템포로 잘못 보정되는 사례가 있었다.
+
+    지금 버전은 하드 컷오프를 없애고, 장르 유사도 점수와 댄서빌리티 대역 적합도 점수를
+    둘 다 연속값으로 계산해 가중합으로 최종 후보를 고른다. 장르 예측(400종 분류)은
+    댄서빌리티 하나보다 신뢰도가 높은 신호이므로, 상위 장르 중 하나라도 BPM 성향이
+    뚜렷한 장르(장르명이 GENRE_BPM_CENTER 키워드와 매칭)와 겹치면 장르 쪽에 더 큰 비중을 준다."""
     top_idx = np.argsort(avg_predictions)[::-1][:top_n]
     top_genres = [(labels[i], avg_predictions[i]) for i in top_idx]
     candidates = {"원본": bpm_candidate, "절반": bpm_candidate / 2, "두배": bpm_candidate * 2}
@@ -314,21 +325,29 @@ def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, dancea
                     matched.append(np.exp(-(distance ** 2) / (2 * 25 ** 2)) * prob)
         return float(np.mean(matched)) if matched else 0.0
 
-    lo, hi = _danceability_bpm_range(danceability)
-    in_range = {k: v for k, v in candidates.items() if lo <= v <= hi}
+    def dance_range_score(bpm_value, lo, hi):
+        """대역 안이면 1.0, 밖이면 대역과의 거리에 따라 완만하게 감소 (하드 컷오프 아님)."""
+        if lo <= bpm_value <= hi:
+            return 1.0
+        dist = (lo - bpm_value) if bpm_value < lo else (bpm_value - hi)
+        return float(np.exp(-(dist ** 2) / (2 * 20 ** 2)))
 
-    if len(in_range) == 1:
-        # 댄서빌리티 대역에 유일하게 맞는 후보 → 그대로 채택 (장르 점수와 무관하게 우선)
-        return list(in_range.values())[0]
-    elif len(in_range) > 1:
-        # 대역 안에 여러 후보가 있으면 장르 유사도로 그중 하나를 고름
-        best_key = max(in_range, key=lambda k: genre_score(in_range[k]))
-        return in_range[best_key]
-    else:
-        # 어떤 후보도 댄서빌리티 대역에 들지 않으면 대역 중심에 가장 가까운 후보를 채택
-        range_center = (lo + hi) / 2
-        best_key = min(candidates, key=lambda k: abs(candidates[k] - range_center))
-        return candidates[best_key]
+    lo, hi = _danceability_bpm_range(danceability)
+    genre_scores = {k: genre_score(v) for k, v in candidates.items()}
+    dance_scores = {k: dance_range_score(v, lo, hi) for k, v in candidates.items()}
+
+    # 상위 장르 중 BPM 성향이 뚜렷한 장르와 매칭되는 게 하나라도 있으면(=장르 신호 존재)
+    # 장르 쪽 비중을 크게 두고, 매칭이 전혀 없으면 댄서빌리티 대역에만 의존한다.
+    has_genre_signal = any(score > 0 for score in genre_scores.values())
+    genre_weight = 0.7 if has_genre_signal else 0.0
+    dance_weight = 1.0 - genre_weight
+
+    combined = {
+        k: genre_weight * genre_scores[k] + dance_weight * dance_scores[k]
+        for k in candidates
+    }
+    best_key = max(combined, key=combined.get)
+    return candidates[best_key]
 
 
 def format_duration(seconds):
@@ -656,77 +675,67 @@ def cosine_similarity(vec_a, vec_b):
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
 
-def compute_combined_recommendations(selected, others, api_key, essentia_weight=0.6, lastfm_weight=0.4):
-    """Essentia 음향 유사도 + Last.fm 아티스트 연관도를 합산해 추천 점수를 계산.
-    Last.fm 쪽에서 실제 오류(네트워크/API 오류)가 발생하면 lastfm_ok=False로 표시하고,
-    그 경우에는 가중합을 쓰지 않고 Essentia 유사도만으로 combined_score를 계산한다."""
-    selected_artist = (selected.get("artist") or "").strip()
-    similar_artist_map = {}
-    lastfm_ok = False
-
-    if api_key and selected_artist:
-        similar = get_similar_artists(selected_artist, api_key, limit=30)
-        if similar is not None:
-            lastfm_ok = True
-            for a in similar:
-                similar_artist_map[a["name"].lower()] = a["match"]
-
+def compute_recommendations(selected, others):
+    """Essentia 임베딩(discogs-effnet) 코사인 유사도만으로 추천 점수를 계산.
+    (Last.fm 아티스트 연관도는 더 이상 점수에 반영하지 않음 — 순수 음향 기반 추천)"""
     results = []
     for s in others:
-        essentia_score = cosine_similarity(selected["embedding_vector"], s["embedding_vector"])
-        other_artist = (s.get("artist") or "").strip()
-
-        lastfm_score = 0.0
-        if lastfm_ok and other_artist:
-            if selected_artist and other_artist.lower() == selected_artist.lower():
-                lastfm_score = 1.0
-            elif other_artist.lower() in similar_artist_map:
-                lastfm_score = similar_artist_map[other_artist.lower()]
-
-        if lastfm_ok:
-            combined = essentia_weight * essentia_score + lastfm_weight * lastfm_score
-        else:
-            # Last.fm 연동이 실패한 경우: 가중치를 나누지 않고 Essentia 유사도를 그대로 최종 점수로 사용
-            combined = essentia_score
-
+        score = cosine_similarity(selected["embedding_vector"], s["embedding_vector"])
         results.append({
             "filename": s["filename"],
             "title": s.get("title") or s["filename"],
-            "artist": other_artist,
-            "essentia_score": essentia_score,
-            "lastfm_score": lastfm_score,
-            "combined_score": combined,
-            "lastfm_ok": lastfm_ok,
+            "artist": (s.get("artist") or "").strip(),
+            "score": score,
+            "song": s,
         })
-    results.sort(key=lambda x: x["combined_score"], reverse=True)
-    return results, lastfm_ok
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results
 
 
-def build_recommend_reason(rec, selected_artist):
+def build_recommend_reason(selected, rec):
+    """음향 임베딩 유사도 한 줄로 뭉뚱그리지 않고, 실제로 어떤 지표가 비슷한지
+    장르 / 템포 / 무드 / 감성 프로필 / 음향 텍스처 순으로 구체적으로 짚어주는 추천 이유."""
+    song = rec["song"]
     parts = []
-    es_score = rec["essentia_score"]
-    if es_score >= 0.85:
-        parts.append("장르·리듬·음색이 매우 비슷한 곡")
-    elif es_score >= 0.7:
-        parts.append("음향적 특징이 꽤 비슷한 곡")
-    elif es_score >= 0.5:
-        parts.append("음향적 특징이 어느 정도 비슷한 곡")
-    else:
-        parts.append("음향적 특징은 다소 다른 곡")
 
-    if not rec.get("lastfm_ok", False):
-        # Last.fm 연동이 실패한 경우에는 아티스트 연관도 언급 없이 Essentia 기준 이유만 표시
-        return parts[0]
+    # 1) 예측 장르 겹침 (Top5 기준)
+    selected_genres = [g for g, _ in selected.get("top_genres", [])[:5]]
+    other_genres = [g for g, _ in song.get("top_genres", [])[:5]]
+    selected_set = {g.lower() for g in selected_genres}
+    overlap = [g for g in other_genres if g.lower() in selected_set]
+    if overlap:
+        parts.append(f"공통 예상 장르 '{overlap[0]}'" + (f" 외 {len(overlap)-1}개" if len(overlap) > 1 else ""))
 
-    ls_score = rec["lastfm_score"]
-    if selected_artist and rec["artist"] and rec["artist"].lower() == selected_artist.lower():
-        parts.append("동일 아티스트")
-    elif ls_score > 0:
-        parts.append(f"Last.fm 기준 아티스트 연관도 {ls_score*100:.0f}%")
-    else:
-        parts.append("Last.fm에서는 아티스트 간 연관성 미확인")
+    # 2) BPM 근접도
+    bpm_diff = abs(selected["bpm"] - song["bpm"])
+    if bpm_diff <= 4:
+        parts.append(f"BPM 거의 동일 (약 {song['bpm']:.0f})")
+    elif bpm_diff <= 12:
+        parts.append(f"템포대 비슷함 (약 {song['bpm']:.0f} BPM)")
 
-    return " · ".join(parts)
+    # 3) 무드 라벨 일치
+    if selected.get("mood_label") and selected.get("mood_label") == song.get("mood_label"):
+        parts.append(f"무드 동일 ({song.get('mood_label')})")
+
+    # 4) 감성 프로필(Valence·Energy) 근접도
+    energy_diff = abs(selected["energy"] - song["energy"])
+    valence_diff = abs(selected["valence"] - song["valence"])
+    if energy_diff <= 0.12 and valence_diff <= 0.12:
+        parts.append("에너지·긍정정서 프로필 거의 동일")
+    elif energy_diff <= 0.2 and valence_diff <= 0.2:
+        parts.append("감성 프로필(에너지·긍정정서) 비슷")
+
+    # 5) 음향 텍스처(어쿠스틱함 · 댄서빌리티)
+    if abs(selected["acousticness"] - song["acousticness"]) <= 0.15:
+        parts.append("어쿠스틱함 정도 비슷")
+    if abs(selected.get("danceability", 1.0) - song.get("danceability", 1.0)) <= 0.2:
+        parts.append("리듬감(댄서빌리티) 비슷")
+
+    if not parts:
+        # 개별 지표는 크게 안 겹치지만 임베딩 전체로는 유사하다고 판단된 경우
+        parts.append("개별 지표보단 전체적인 음향 임베딩(장르·리듬·음색을 종합한 벡터)이 유사")
+
+    return " · ".join(parts[:3])
 
 
 # ============================================================
@@ -1343,11 +1352,13 @@ with tab3:
     <h2>1. 리듬 / 템포</h2>
 
     <h3>BPM(템포)</h3>
-    <p>댄서빌리티(리듬 규칙성) 값으로 먼저 그럴듯한 BPM 대역을 정하고, 원본/절반/두배 BPM 후보 중 그 대역에 드는
-    값을 우선 채택합니다. 대역 안에 후보가 여러 개면 그때 장르 예측 Top5와 장르별 전형적인 템포를 비교해 더 어울리는
-    쪽을 고르고, 대역에 맞는 후보가 하나도 없으면 대역 중심에 가장 가까운 값을 씁니다. 댄서빌리티가 높을수록(리듬이
-    뚜렷할수록) 빠른 BPM대를, 낮을수록 느린 BPM대를 우선하기 때문에 옥타브 오류(정박의 절반/두배로 잘못 인식되는 문제)를
-    안정적으로 보정합니다.</p>
+    <p>원본/절반/두배 BPM 후보 중 하나를 고르는 옥타브 보정에는 두 가지 신호를 함께 씁니다.
+    ① 장르 예측 Top8과 장르별 전형적인 템포를 비교한 "장르 유사도"와, ② 댄서빌리티(리듬 규칙성) 값으로 추정한
+    그럴듯한 BPM 대역에 얼마나 가까운지를 보는 "댄서빌리티 적합도"입니다. 이 둘을 하드 컷오프 없이 연속적인
+    점수로 계산한 뒤 가중합해서 후보를 고르며, 상위 장르 중 BPM 성향이 뚜렷한 장르(댄스·일렉트로닉·발라드 등)와
+    매칭되는 게 있으면 장르 쪽 비중을 더 크게 둡니다. 댄서빌리티 값 하나만으로 대역을 딱 잘라 결정하지 않기 때문에,
+    댄서빌리티가 애매하게 측정된 EDM/댄스곡이 발라드 템포로 잘못 보정되는 것 같은 옥타브 오류(정박의 절반/두배로
+    잘못 인식되는 문제)를 더 안정적으로 방지합니다.</p>
     <table>
     <tr><th>범위</th><th>느낌</th></tr>
     <tr><td>~75 이하</td><td>매우 느림 (발라드, 앰비언트)</td></tr>
@@ -1538,26 +1549,15 @@ with tab4:
 
         others = [s for s in library if s["filename"] != selected_name]
         if others:
-            recs, lastfm_ok = compute_combined_recommendations(selected, others, LASTFM_API_KEY)
-            selected_artist = (selected.get("artist") or "").strip()
-            if lastfm_ok:
-                st.caption("Essentia 음향 유사도(60%) + Last.fm 아티스트 연관도(40%)를 합산한 최종 추천 점수예요.")
-            else:
-                st.caption("⚠️ Last.fm 연결에 문제가 있어 Essentia 음향 유사도만으로 계산한 추천 점수예요.")
+            recs = compute_recommendations(selected, others)
+            st.caption("내 라이브러리 안에서 Essentia 음향 임베딩(장르·리듬·음색 종합)이 가장 비슷한 곡을 추천해드려요.")
             for rec in recs[:3]:
-                reason = build_recommend_reason(rec, selected_artist)
+                reason = build_recommend_reason(selected, rec)
                 display_name = f'{rec["title"]}' + (f' — {rec["artist"]}' if rec["artist"] else "")
-                if rec["lastfm_ok"]:
-                    score_label = "종합 추천 점수"
-                    sub_line = f"Essentia 유사도 {rec['essentia_score']*100:.1f}% · Last.fm 연관도 {rec['lastfm_score']*100:.1f}%"
-                else:
-                    score_label = "추천 점수 (Essentia 기준)"
-                    sub_line = f"Essentia 유사도 {rec['essentia_score']*100:.1f}%"
                 st.markdown(f"""
                 <div class="metric-card recommend-card">
                     <div class="metric-label">{display_name}</div>
-                    <div class="metric-value recommend-score">{score_label} {rec['combined_score']*100:.1f}%</div>
-                    <div class="metric-sub">{sub_line}</div>
+                    <div class="metric-value recommend-score">유사도 {rec['score']*100:.1f}%</div>
                     <div class="metric-sub">💬 추천 이유: {reason}</div>
                 </div>
                 """, unsafe_allow_html=True)
