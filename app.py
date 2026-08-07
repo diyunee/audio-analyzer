@@ -1103,7 +1103,9 @@ def build_library_map(library, height=620):
         # 점 크기는 동일하게 유지하고 Danceability를 색으로 표현한다.
         # 이 분석기의 Danceability는 1을 넘을 수 있으므로 0~2 범위를 사용한다.
         color="danceability",
-        color_continuous_scale=["#3B1B6F", "#365C9D", "#1F8F7B", "#E08A2E", "#F4C95D"],
+        # 한 계열의 순차 색상: 값이 높을수록 더 짙은 주황색으로 표시한다.
+        # 가장 낮은 색도 흰 배경에서 사라지지 않도록 충분한 채도를 유지한다.
+        color_continuous_scale=["#F6C982", "#E8943A", "#C85F17", "#8F3508"],
         range_color=[0, 2.0],
         custom_data=["title", "artist", "danceability", "acousticness"],
     )
@@ -1124,11 +1126,11 @@ def build_library_map(library, height=620):
         paper_bgcolor="white",
         font=dict(family="Manrope, sans-serif", color="#1A1D24"),
         xaxis=dict(
-            title="Valence (긍정정서) →", range=[-0.08, 1.08],
+            title="어두운 분위기 ← Valence → 밝은 분위기", range=[-0.08, 1.08],
             color="#374151", gridcolor="#E5E7EB", zeroline=False,
         ),
         yaxis=dict(
-            title="Energy (에너지) →", range=[-0.08, 1.08],
+            title="차분함 ← Energy → 강렬함", range=[-0.08, 1.08],
             color="#374151", gridcolor="#E5E7EB", zeroline=False,
         ),
         coloraxis_colorbar=dict(
@@ -1514,5 +1516,6 @@ with tab_map:
         st.caption("지도를 그리려면 라이브러리에 곡이 2개 이상 있어야 해요.")
     else:
         st.markdown('<div class="section-label">라이브러리 지도 (감성 분포 한눈에 보기)</div>', unsafe_allow_html=True)
-        st.caption("점의 위치 = Valence × Energy, 색 = Danceability · 모든 점의 크기는 같으며, 마우스를 올리면 곡 정보와 Acousticness가 나타나요")
+        st.caption("가로: 어두운 분위기 ↔ 밝은 분위기 · 세로: 차분함 ↔ 강렬함")
+        st.caption("점 색: Danceability — 연한 주황색일수록 낮고, 짙은 주황색일수록 높아요 · 마우스를 올리면 곡 정보와 Acousticness가 나타나요")
         st.plotly_chart(build_library_map(map_library), use_container_width=True)
