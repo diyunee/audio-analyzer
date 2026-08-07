@@ -459,24 +459,53 @@ def determine_mood(result):
             intensity_index = 0
         mood_label = f"{mood_words[intensity_index]} 무드"
 
-    tags = []
-    ac = result.get("acousticness", 0.5)
-    dance = result.get("danceability", 1.0)
-    instr = result.get("instrumentalness", 0.3)
-    if ac >= 0.6:
-        tags.append("어쿠스틱")
-    elif ac < 0.3:
-        tags.append("일렉트로닉")
-    if dance >= 1.3:
-        tags.append("댄서블")
-    elif dance < 0.5:
-        tags.append("자유로운 박자")
-    if instr >= 0.6:
-        tags.append("연주곡 성격")
-
-    if tags:
-        mood_label = f'{mood_label} · {" · ".join(tags)}'
     return mood_label, base_desc
+
+
+def determine_music_character(result):
+    """BPM, ZCR, 예측 장르와 Acousticness를 사람이 읽기 쉬운 세 가지 특성으로 요약."""
+    bpm = result.get("bpm", 100)
+    zcr = result.get("zcr", 0.05)
+    acousticness = result.get("acousticness", 0.5)
+
+    if bpm <= 75:
+        tempo_tag = "느린 템포"
+    elif bpm <= 95:
+        tempo_tag = "느긋한 템포"
+    elif bpm <= 115:
+        tempo_tag = "보통 템포"
+    else:
+        tempo_tag = "빠른 템포"
+
+    if zcr >= 0.1:
+        texture_tag = "거친 타격감"
+    elif zcr >= 0.05:
+        texture_tag = "선명한 타격감"
+    else:
+        texture_tag = "부드러운 음색"
+
+    # '밴드 사운드'는 악기 직접 검출값이 아니라 상위 장르 예측을 바탕으로 한 표현이다.
+    top_genres = [
+        str(genre).lower()
+        for genre, _score in result.get("top_genres", [])[:5]
+    ]
+    band_keywords = ("rock", "punk", "metal", "hardcore", "garage", "grunge")
+    is_band_style = any(
+        keyword in genre
+        for genre in top_genres
+        for keyword in band_keywords
+    )
+
+    if is_band_style:
+        sound_tag = "밴드 사운드"
+    elif acousticness >= 0.6:
+        sound_tag = "어쿠스틱 사운드"
+    elif acousticness < 0.3:
+        sound_tag = "일렉트로닉 사운드"
+    else:
+        sound_tag = "혼합형 사운드"
+
+    return [tempo_tag, texture_tag, sound_tag]
 
 
 # ============================================================
@@ -1173,11 +1202,13 @@ def metric_card(label, value, sub="", amber=False, value_class=""):
 def render_mood_banner(result):
     # 저장된 예전 문구 대신 현재 규칙으로 다시 계산해 기존 라이브러리에도 즉시 반영한다.
     mood_label, mood_desc = determine_mood(result)
+    music_character = determine_music_character(result)
     st.markdown(f"""
     <div class="mood-card">
         <div class="mood-label">Mood(자동분류 무드)</div>
         <div class="mood-value">{mood_label}</div>
         <div class="mood-desc">{mood_desc}</div>
+        <div class="mood-desc"><strong>음악적 성격:</strong> {" · ".join(music_character)}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1397,10 +1428,10 @@ with tab3:
     <p>Valence(정서 긍정성)와 Energy(각성도)를 정서 원형모델(circumplex model) 평면에 좌표로 놓고,
     45도 간격 8방향(따뜻한·신나는·긴장감 있는·격앙된·우울한·쓸쓸한·나른한·평온한) + 중심(담백한) 중
     가장 가까운 방향으로 기본 무드를 정합니다. 원점에서 얼마나 떨어져 있는지(감정의 강도)에 따라
-    각 분위기에 맞는 자연스러운 완성형 무드명을 선택하고, Acousticness·Danceability·Instrumentalness 값에 따라
-    "어쿠스틱", "일렉트로닉", "댄서블", "연주곡 성격" 같은 세부 태그를 추가로 붙입니다.
-    기본 방향 9종 x 강도 3단계 x 태그 조합으로 훨씬 다양한 무드가 나오며, 별도의 모델 호출 없이
-    이미 계산된 Essentia 지표들만으로 계산돼요.</p>
+    각 분위기에 맞는 자연스러운 완성형 무드명을 선택합니다. 무드 아래의 "음악적 성격"은 BPM으로 템포를,
+    ZCR로 타격감과 음색 성향을, 상위 장르 예측과 Acousticness로 밴드·어쿠스틱·일렉트로닉 등의 사운드 성격을
+    요약합니다. "밴드 사운드"는 악기 구성을 직접 검출한 결과가 아니라 록·펑크·메탈 계열 장르 예측을 바탕으로 한
+    설명입니다. 별도의 모델 호출 없이 이미 계산된 Essentia 지표와 장르 예측값만 사용해요.</p>
 
     </div>
     """, unsafe_allow_html=True)
