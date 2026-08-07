@@ -308,7 +308,7 @@ def _energy_bpm_range(energy):
         return (110, 190)
 
 
-def _select_bpm_candidate(bpm_candidate, top_genres, energy=0.5):
+def _select_bpm_candidate(bpm_candidate, top_genres, energy=0.5, return_details=False):
     """원본/절반/두배 BPM 후보 중 하나를 고르는 옥타브 보정.
 
     과거 버전은 댄서빌리티 대역에 후보가 '단 하나'만 걸리면 장르 신호를 완전히 무시하고
@@ -332,13 +332,17 @@ def _select_bpm_candidate(bpm_candidate, top_genres, energy=0.5):
         "1.5배": bpm_candidate * 1.5,
     }
 
+    # 모델 출력은 장르 간 배타적인 확률분포가 아닐 수 있으므로 Top-N 점수의 합으로
+    # 정규화한다. 예전 구현처럼 "매칭된 장르끼리만" 다시 정규화하면, 확률이 매우 낮은
+    # 장르 하나도 강한 장르 증거처럼 취급되는 문제가 생긴다.
+    top_score_total = max(sum(max(float(prob), 0.0) for _, prob in top_genres), 1e-8)
+
     def genre_score(bpm_value):
         """장르별 (거리 기반 유사도)를 예측 확률로 가중평균한 값. 0~1 범위를 유지해야
         음향 prior 점수들(0~1)과 같은 스케일에서 공정하게 비교/가중합할 수 있다.
         (과거 버전은 매칭 개수로 단순 평균해서 값이 항상 작게 나왔고, 그 결과 가중치를
         줘도 사실상 음향 신호에 항상 밀리는 문제가 있었음)"""
         weighted_sum = 0.0
-        weight_total = 0.0
         for genre_label, prob in top_genres:
             label_lower = genre_label.lower()
             best_match = None
@@ -350,8 +354,15 @@ def _select_bpm_candidate(bpm_candidate, top_genres, energy=0.5):
                 distance = abs(bpm_value - best_match[1])
                 similarity = np.exp(-(distance ** 2) / (2 * 25 ** 2))  # 0~1
                 weighted_sum += similarity * prob
-                weight_total += prob
-        return float(weighted_sum / weight_total) if weight_total > 0 else 0.0
+        return float(weighted_sum / top_score_total)
+
+    def matched_genre_mass():
+        matched = 0.0
+        for genre_label, prob in top_genres:
+            label_lower = genre_label.lower()
+            if any(keyword.lower() in label_lower for keyword in GENRE_BPM_CENTER):
+                matched += max(float(prob), 0.0)
+        return float(min(matched / top_score_total, 1.0))
 
     def range_score(bpm_value, lo, hi):
         """대역 안이면 1.0, 밖이면 대역과의 거리에 따라 완만하게 감소 (하드 컷오프 아님)."""
@@ -368,33 +379,57 @@ def _select_bpm_candidate(bpm_candidate, top_genres, energy=0.5):
     # 상위 장르 중 BPM 성향이 뚜렷한 장르와 매칭되는 게 하나라도 있으면(=장르 신호 존재)
     # Danceability는 빠르기가 아니라 리듬의 규칙성을 뜻하므로 BPM 선택에 사용하지 않는다.
     # 장르 신호가 있으면 장르를 우선하고 Energy는 보조 근거로만 사용한다.
-    has_genre_signal = any(score > 0 for score in genre_scores.values())
-    if has_genre_signal:
-        genre_weight, energy_weight = 0.75, 0.25
+    genre_mass = matched_genre_mass()
+    # 장르 모델은 BPM 검출기가 아니라 prior일 뿐이다. Top-N 예측 중 매칭 장르가
+    # 충분한 비중을 차지할 때만 사용하고, 그 경우에도 최종 결정의 30%를 넘지 않는다.
+    if genre_mass >= 0.30:
+        genre_weight = min(0.30, 0.15 + 0.20 * genre_mass)
     else:
-        genre_weight, energy_weight = 0.0, 1.0
+        genre_weight = 0.0
+    energy_weight = 1.0 - genre_weight
 
     # "원본"에 작은 가산점을 줘서, 다른 후보와 점수 차가 크지 않은 애매한 상황에서는
     # Essentia가 직접 검출한 원래 BPM을 함부로 뒤집지 않도록 한다. 장르/음향 신호가
     # 뚜렷하게 다른 후보를 가리킬 때는 이 가산점을 넘어서므로 여전히 보정이 이루어진다.
-    ORIGINAL_BIAS = 0.08
+    ORIGINAL_BIAS = 0.10
     combined = {
         k: genre_weight * genre_scores[k] + energy_weight * energy_scores[k]
         + (ORIGINAL_BIAS if k == "원본" else 0.0)
         for k in candidates
     }
     best_key = max(combined, key=combined.get)
-    return candidates[best_key]
+
+    # 원본과 차이가 아주 작으면 배수 보정을 하지 않는다. 점수 차가 확실할 때만
+    # half/double-time 판정을 적용해 후보가 불필요하게 뒤집히는 것을 막는다.
+    MIN_CORRECTION_MARGIN = 0.12
+    if best_key != "원본" and combined[best_key] - combined["원본"] < MIN_CORRECTION_MARGIN:
+        best_key = "원본"
+
+    details = {
+        "selected": best_key,
+        "genre_evidence": genre_mass,
+        "genre_weight": genre_weight,
+        "candidate_scores": {k: float(v) for k, v in combined.items()},
+        "confidence": float(np.clip(
+            0.5 + (combined[best_key] - sorted(combined.values())[-2]), 0.0, 1.0
+        )),
+    }
+    if return_details:
+        return float(candidates[best_key]), details
+    return float(candidates[best_key])
 
 
-def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, energy=0.5, top_n=8):
+def genre_based_octave_correction(bpm_candidate, labels, avg_predictions, energy=0.5, top_n=8,
+                                  return_details=False):
     """모델의 상위 장르 예측과 Energy로 BPM의 옥타브/비율 오류를 보정한다."""
     top_idx = np.argsort(avg_predictions)[::-1][:top_n]
     top_genres = [(labels[i], float(avg_predictions[i])) for i in top_idx]
-    return _select_bpm_candidate(float(bpm_candidate), top_genres, energy=energy)
+    return _select_bpm_candidate(
+        float(bpm_candidate), top_genres, energy=energy, return_details=return_details
+    )
 
 
-BPM_CORRECTION_VERSION = 2
+BPM_CORRECTION_VERSION = 3
 
 
 def format_duration(seconds):
@@ -690,9 +725,9 @@ def analyze_audio(file_bytes, filename):
 
     danceability = float(feats['rhythm.danceability'])
     raw_bpm = float(feats['rhythm.bpm'])
-    final_bpm = float(genre_based_octave_correction(
-        raw_bpm, genre_labels, genre_pred, energy=energy
-    ))
+    final_bpm, bpm_details = genre_based_octave_correction(
+        raw_bpm, genre_labels, genre_pred, energy=energy, return_details=True
+    )
 
     top5_idx = np.argsort(genre_pred)[::-1][:5]
     top_genres = [(genre_labels[i], float(genre_pred[i])) for i in top5_idx]
@@ -701,6 +736,10 @@ def analyze_audio(file_bytes, filename):
         "duration": float(feats['metadata.audio_properties.length']),
         "bpm": final_bpm,
         "raw_bpm": raw_bpm,
+        "bpm_correction": bpm_details["selected"],
+        "bpm_confidence": bpm_details["confidence"],
+        "bpm_genre_evidence": bpm_details["genre_evidence"],
+        "bpm_candidate_scores": bpm_details["candidate_scores"],
         "bpm_correction_version": BPM_CORRECTION_VERSION,
         "danceability": danceability,
         "loudness": float(feats['lowlevel.average_loudness']),
@@ -1032,7 +1071,9 @@ def load_library():
                     continue
                 top_genres = entry.get("top_genres") or []
                 if top_genres and entry.get("bpm"):
-                    old_bpm = float(entry["bpm"])
+                    # 이미 한 차례 보정된 BPM이 아니라 최초 검출값에서 다시 계산해야
+                    # 버전 업그레이드 때 절반/두 배 보정이 누적되지 않는다.
+                    old_bpm = float(entry.get("raw_bpm", entry["bpm"]))
                     entry.setdefault("raw_bpm", old_bpm)
                     entry["bpm"] = float(_select_bpm_candidate(
                         old_bpm, top_genres, energy=float(entry.get("energy", 0.5))
@@ -1336,7 +1377,15 @@ def render_report(result):
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        metric_card(METRIC_LABELS["bpm"], f'{result["bpm"]:.1f}', sub=interpret_bpm(result["bpm"]))
+        bpm_sub = interpret_bpm(result["bpm"])
+        raw_bpm = float(result.get("raw_bpm", result["bpm"]))
+        correction = result.get("bpm_correction", "원본")
+        confidence = float(result.get("bpm_confidence", 0.0))
+        if abs(raw_bpm - result["bpm"]) >= 1.0:
+            bpm_sub += f'<br>원본 {raw_bpm:.1f} → {correction} 보정 · 신뢰도 {confidence:.0%}'
+        else:
+            bpm_sub += f'<br>원본 유지 · 신뢰도 {confidence:.0%}'
+        metric_card(METRIC_LABELS["bpm"], f'{result["bpm"]:.1f}', sub=bpm_sub)
         st.pyplot(plot_range_gauge(result["bpm"], RANGE_METRIC_CONFIGS["bpm"]), use_container_width=True)
     with c2:
         metric_card(METRIC_LABELS["danceability"], f'{result["danceability"]:.2f}', sub=interpret_danceability(result["danceability"]), amber=True)
